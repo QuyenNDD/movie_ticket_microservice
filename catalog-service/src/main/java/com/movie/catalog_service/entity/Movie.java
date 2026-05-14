@@ -2,10 +2,13 @@ package com.movie.catalog_service.entity;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -13,6 +16,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "movies")
+@Builder
 public class Movie {
     @Id
     @Column(length = 36)
@@ -45,4 +49,7 @@ public class Movie {
             this.id = UUID.randomUUID().toString();
         }
     }
+
+    @OneToMany(mappedBy = "movie", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Showtime> showtimes = new ArrayList<>();
 }
