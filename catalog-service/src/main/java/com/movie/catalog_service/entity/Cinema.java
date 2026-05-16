@@ -32,6 +32,9 @@ public class Cinema {
     @JsonIgnore
     private List<Room> rooms;
 
+    @Column(name = "is_active")
+    private Boolean isActive = true;
+
     @PrePersist
     public void ensureId() {
         if (this.id == null) {
