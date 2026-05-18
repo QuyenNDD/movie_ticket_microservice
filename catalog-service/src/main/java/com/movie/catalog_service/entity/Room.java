@@ -26,8 +26,17 @@ public class Room {
     @Column(nullable = false, length = 50)
     private String name;
 
+    @Column(name = "row_count", nullable = false)
+    private Integer rowCount;
+
+    @Column(name = "column_count", nullable = false)
+    private Integer columnCount;
+
     @Column(name = "total_seats", nullable = false)
     private Integer totalSeats;
+
+    @Column(name = "is_active")
+    private Boolean isActive = true;
 
     @OneToMany(mappedBy = "room", cascade = CascadeType.ALL)
     @JsonIgnore

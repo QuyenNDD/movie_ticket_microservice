@@ -50,7 +50,7 @@ public class SnackServiceImpl implements SnackService{
 
     @Override
     public SnackResponseDTO createSnack(SnackRequestDTO request) {
-        if (snackRepository.findByTitle(request.getName()).isPresent()) {
+        if (snackRepository.findByName(request.getName()).isPresent()) {
             throw new APIException("Title is available");
         }
         Snack snack = Snack.builder()

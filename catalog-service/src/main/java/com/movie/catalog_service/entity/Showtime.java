@@ -33,10 +33,17 @@ public class Showtime {
     @Column(name = "base_price", nullable = false)
     private Double basePrice;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private ShowtimeStatus status;
+
     @PrePersist
     public void ensureId() {
         if (this.id == null) {
             this.id = UUID.randomUUID().toString();
+        }
+        if (this.status == null) {
+            this.status = ShowtimeStatus.SCHEDULED;
         }
     }
 }

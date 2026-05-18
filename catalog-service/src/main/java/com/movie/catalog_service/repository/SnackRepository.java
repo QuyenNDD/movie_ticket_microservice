@@ -14,7 +14,7 @@ import java.util.Optional;
 public interface SnackRepository extends JpaRepository<Snack, String> {
     @Query("SELECT s FROM Snack s WHERE (:isActive IS NULL OR s.isActive = :isActive)")
     Page<Snack> filterSnacks(@Param("isActive") Boolean isActive, Pageable pageable);
-    Optional<Snack> findByTitle(String title);
+    Optional<Snack> findByName(String name);
     boolean existsByName(String name);
     Page<Snack> findByNameContainingIgnoreCase(String name, Pageable pageable);
 }
