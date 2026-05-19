@@ -6,22 +6,34 @@ spring:
     name: api-gateway
   cloud:
     gateway:
-      server:
-        webflux:
-          routes:
-          - id: auth-service
-            uri: http://host.docker.internal:8083
-            predicates:
-              - Path=/api/v1/auth/**
+      routes:
+        - id: auth-service
+          uri: http://host.docker.internal:8083
+          predicates:
+            - Path=/api/v1/auth/**
 
-          - id: catalog-service
-            uri: http://host.docker.internal:8081
-            predicates:
-              - Path=/api/v1/catalog/**
+        - id: catalog-service-public
+          uri: http://host.docker.internal:8081
+          predicates:
+            - Path=/api/v1/catalog/**
+            - Method=GET
 
-          - id: booking-service
-            uri: http://host.docker.internal:8082
-            predicates:
-              - Path=/api/v1/booking/**
-            filters:
-              - AuthenticationFilter
+        - id: catalog-service-protected
+          uri: http://host.docker.internal:8081
+          predicates:
+            - Path=/api/v1/catalog/**
+            - Method=POST,PUT,DELETE
+          filters:
+            - AuthenticationFilter
+
+        - id: booking-service
+          uri: http://host.docker.internal:8082
+          predicates:
+            - Path=/api/v1/booking/**
+          filters:
+            - AuthenticationFilter
+  movie:
+    jwt:
+      secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+      expirationMs: 86400000
+      refresh-expiration: 604800000
