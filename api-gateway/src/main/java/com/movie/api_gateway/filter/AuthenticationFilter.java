@@ -17,14 +17,13 @@ import reactor.core.publisher.Mono;
 public class AuthenticationFilter extends AbstractGatewayFilterFactory<AuthenticationFilter.Config> {
 
     @Autowired
-    private JwtUtils jwtUtils;
+    JwtUtils jwtUtils;
 
     public AuthenticationFilter() {
         super(Config.class);
     }
 
     public static class Config {
-        // Cấu hình nếu cần truyền tham số vào Filter
     }
 
     @Override

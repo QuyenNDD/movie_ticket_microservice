@@ -46,7 +46,7 @@ public class RoomController {
         return new ResponseEntity<>(deletedRoom, HttpStatus.OK);
     }
 
-    @GetMapping("/{roomId}/seats")
+    @GetMapping("/internal/{roomId}/seats")
     public ResponseEntity<List<SeatResponseDTO>> getSeatsByRoomId(@PathVariable String roomId) {
         return new ResponseEntity<>(roomService.getSeatsByRoomId(roomId), HttpStatus.OK);
     }

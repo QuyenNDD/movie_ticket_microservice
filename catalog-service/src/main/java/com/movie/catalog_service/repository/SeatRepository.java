@@ -8,5 +8,5 @@ import java.util.List;
 
 @Repository
 public interface SeatRepository extends JpaRepository<Seat, String> {
-    List<Seat> findByRoomIdOrderByRowNameAscSeatNumberAsc(String roomId);
+    List<Seat> findByRoomIdOrderByGridRowAscGridColumnAsc(String roomId);
 }

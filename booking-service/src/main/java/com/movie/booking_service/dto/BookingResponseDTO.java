@@ -3,6 +3,7 @@ package com.movie.booking_service.dto;
 import com.movie.booking_service.entity.BookingSeat;
 import com.movie.booking_service.entity.BookingSnack;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -13,10 +14,11 @@ import java.util.Map;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class BookingResponseDTO {
-    private String showtimeId;
-    private LocalDateTime bookingTime;
+    private String bookingId;
+    private String status;
+    private String message;
     private Double totalPrice;
-    private List<BookingSeat> bookingSeats;
-    private List<BookingSnack> bookingSnacks;
+    private long expiresInSeconds;
 }

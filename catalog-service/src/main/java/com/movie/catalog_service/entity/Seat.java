@@ -24,11 +24,17 @@ public class Seat {
     @Column(name = "row_name", nullable = false, length = 5)
     private String rowName;
 
-    @Column(name = "seat_number", nullable = false)
-    private Integer seatNumber;
+    @Column(name = "seat_lable", nullable = false)
+    private String seatLabel;
 
     @Column(name = "seat_type", nullable = false)
     private String seatType;
+
+    @Column(name = "grid_row", nullable = false)
+    private Integer gridRow;
+
+    @Column(name = "grid_column", nullable = false)
+    private Integer gridColumn;
 
     @PrePersist
     public void ensureId() {

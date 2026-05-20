@@ -1,26 +1,43 @@
 package com.movie.catalog_service.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
+import java.util.List;
 
 @Data
 public class RoomRequestDTO {
     @NotBlank(message = "ID của cụm rạp không được để trống")
-    private String cinemaId; // Phải biết phòng này nhét vào rạp nào
+    private String cinemaId;
 
     @NotBlank(message = "Tên phòng không được để trống")
-    private String name; // Ví dụ: "Room 01", "IMAX 3D"
+    @JsonProperty("roomName")
+    private String name;
 
-    @NotNull(message = "Số hàng ghế không được để trống")
-    @Min(value = 1, message = "Số hàng tối thiểu là 1")
-    @Max(value = 26, message = "Số hàng tối đa là 26 (Từ A đến Z)")
-    private Integer rowCount;
+    @NotNull(message = "Số hàng của khung lưới không được để trống")
+    @Min(1) @Max(26)
+    private Integer totalRows; // Đại diện cho kích thước chiều dọc lớn nhất của phòng
 
-    @NotNull(message = "Số lượng ghế mỗi hàng không được để trống")
-    @Min(value = 1, message = "Mỗi hàng phải có ít nhất 1 ghế")
-    @Max(value = 50, message = "Mỗi hàng tối đa 50 ghế để đảm bảo hiển thị UI")
-    private Integer columnCount;
+    @NotNull(message = "Số cột của khung lưới không được để trống")
+    @Min(1) @Max(50)
+    private Integer totalColumns; // Đại diện cho kích thước chiều ngang lớn nhất của phòng
+
+    @NotEmpty(message = "Danh sách cấu hình ghế không được để trống")
+    @Valid
+    private List<SeatCreateRequest> seats;
+
+    // Class nội bộ đại diện cho từng cái ghế gửi lên
+    @Data
+    public static class SeatCreateRequest {
+        private Integer rowIndex;
+        private Integer columnIndex;
+        private String rowLabel;
+        private String columnLabel;
+        private String seatType;
+    }
 }

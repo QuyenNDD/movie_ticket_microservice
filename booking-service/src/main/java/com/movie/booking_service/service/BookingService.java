@@ -2,7 +2,15 @@ package com.movie.booking_service.service;
 
 import com.movie.booking_service.dto.BookingRequestDTO;
 import com.movie.booking_service.dto.BookingResponseDTO;
+import com.movie.booking_service.dto.RoomSeatMatrixResponseDTO;
+import com.movie.booking_service.dto.SeatStatusResponseDTO;
+
+import java.util.List;
 
 public interface BookingService {
-    BookingResponseDTO  createBooking(String userId, BookingRequestDTO bookingRequestDTO);
+    BookingResponseDTO holdSeats(String userId, BookingRequestDTO request);
+    RoomSeatMatrixResponseDTO getSeatsForShowtime(String showtimeId);
+    BookingResponseDTO confirmPayment(String userId, String bookingId);
+    BookingResponseDTO cancelBooking(String userId, String bookingId);
+    BookingResponseDTO getBookingDetails(String userId, String bookingId);
 }
