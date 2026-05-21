@@ -2,6 +2,8 @@ package com.movie.catalog_service.dto.response;
 
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class CinemaResponseDTO {
     private String id;
@@ -9,4 +11,5 @@ public class CinemaResponseDTO {
     private String address;
     private String city;
     private Boolean isActive;
+    List<RoomResponseDTO> rooms;
 }

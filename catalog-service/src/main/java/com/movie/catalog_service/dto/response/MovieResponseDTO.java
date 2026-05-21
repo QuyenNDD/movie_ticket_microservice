@@ -13,9 +13,19 @@ import java.time.LocalDateTime;
 public class MovieResponseDTO {
     private String id;
     private String title;
+
+    // Các trường mới thêm
+    private String genre;
+    private String country;
+    private String language;
+    private String ageRestriction;
+    private String director;
+    private String actors;
+
     private String description;
     private Integer duration;
     private LocalDate releaseDate;
+
     private String poseUrl;
     private String trailerUrl;
     private String status;

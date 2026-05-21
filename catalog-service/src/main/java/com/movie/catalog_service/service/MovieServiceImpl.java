@@ -35,24 +35,34 @@ public class MovieServiceImpl implements MovieService{
 
     @Override
     public MovieResponseDTO createMovie(MovieRequestDTO request) {
+        // 1. Kiểm tra ngày khởi chiếu không được ở trong quá khứ
         if (request.getReleaseDate().isBefore(LocalDate.now())){
             throw new APIException("Release day is not before now");
         }
 
+        // 2. Kiểm tra trùng lặp tên phim
         if (movieRepository.findByTitle(request.getTitle()).isPresent()) {
-            throw new APIException("Title is available");
+            throw new APIException("Title already exists"); // Đã sửa lại message cho chuẩn nghĩa
         }
 
+        // 3. Map dữ liệu từ DTO sang Entity (Bổ sung các trường mới)
         Movie movie = Movie.builder()
                 .title(request.getTitle())
+                .genre(request.getGenre())             // Thêm Thể loại
+                .country(request.getCountry())         // Thêm Quốc gia
+                .language(request.getLanguage())       // Thêm Ngôn ngữ
+                .ageRestriction(request.getAgeRestriction()) // Thêm Phân loại tuổi
+                .director(request.getDirector())       // Thêm Đạo diễn
+                .actors(request.getActors())           // Thêm Diễn viên
                 .description(request.getDescription())
                 .duration(request.getDuration())
                 .releaseDate(request.getReleaseDate())
-                .poseUrl(request.getPoseUrl())
+                .poseUrl(request.getPoseUrl())         // Vẫn giữ nguyên poseUrl theo yêu cầu
                 .trailerUrl(request.getTrailerUrl())
                 .status(request.getStatus())
                 .build();
 
+        // 4. Lưu vào Database và trả về Response
         Movie savedMovie = movieRepository.save(movie);
         return modelMapper.map(savedMovie, MovieResponseDTO.class);
     }

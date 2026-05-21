@@ -3,7 +3,9 @@ package com.movie.catalog_service.service;
 import com.movie.catalog_service.dto.request.CinemaRequestDTO;
 import com.movie.catalog_service.dto.response.CinemaResponse;
 import com.movie.catalog_service.dto.response.CinemaResponseDTO;
+import com.movie.catalog_service.dto.response.RoomResponseDTO;
 import com.movie.catalog_service.entity.Cinema;
+import com.movie.catalog_service.entity.Room;
 import com.movie.catalog_service.exception.APIException;
 import com.movie.catalog_service.exception.ResourceNotFoundException;
 import com.movie.catalog_service.repository.CinemaRepository;
@@ -61,7 +63,24 @@ public class CinemaServiceImpl implements CinemaService{
     public CinemaResponseDTO getCinemaById(String cinemaId) {
         Cinema cinema = cinemaRepository.findById(cinemaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Cinema", "id", cinemaId));
-        return modelMapper.map(cinema, CinemaResponseDTO.class);
+
+        CinemaResponseDTO response = modelMapper.map(cinema, CinemaResponseDTO.class);
+
+        List<Room> rooms = cinema.getRooms();
+        List<RoomResponseDTO> roomResponse = rooms.stream().map(room -> {
+            RoomResponseDTO responseDTO = new RoomResponseDTO();
+            responseDTO.setId(room.getId());
+            responseDTO.setCinemaId(cinemaId);
+            responseDTO.setCinemaName(cinema.getName());
+            responseDTO.setName(room.getName());
+            responseDTO.setRowCount(room.getRowCount());
+            responseDTO.setColumnCount(room.getColumnCount());
+            responseDTO.setTotalSeats(room.getTotalSeats());
+            responseDTO.setIsActive(room.getIsActive());
+            return responseDTO;
+        }).toList();
+        response.setRooms(roomResponse);
+        return response;
     }
 
     @Override

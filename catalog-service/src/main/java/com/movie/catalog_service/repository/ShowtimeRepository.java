@@ -37,4 +37,6 @@ public interface ShowtimeRepository extends JpaRepository<Showtime, String> {
             "AND DATE(s.startTime) = DATE(:date) " +
             "ORDER BY s.room.cinema.name ASC, s.startTime ASC") // Sắp xếp theo tên rạp trước, giờ chiếu sau
     List<Showtime> findShowtimesByMovieAndDate(@Param("movieId") String movieId, @Param("date") LocalDateTime date);
+
+    boolean existsByRoomIdAndStartTimeAfterAndStatusNot(String roomId, LocalDateTime currentTime, String status);
 }

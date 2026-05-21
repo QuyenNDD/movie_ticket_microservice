@@ -11,11 +11,28 @@ import java.time.LocalDate;
 
 @Data
 public class MovieRequestDTO {
-
-    @NotBlank(message = "Name of movie not null")
+    @NotBlank(message = "Title of movie not blank")
     private String title;
 
-    @NotBlank(message = "Description not null")
+    @NotBlank(message = "Genre not blank")
+    private String genre;
+
+    @NotBlank(message = "Country not blank")
+    private String country;
+
+    @NotBlank(message = "Language not blank")
+    private String language;
+
+    @NotBlank(message = "Age restriction not blank")
+    private String ageRestriction;
+
+    @NotBlank(message = "Director not blank")
+    private String director;
+
+    @NotBlank(message = "Actors not blank")
+    private String actors;
+
+    @NotBlank(message = "Description not blank")
     private String description;
 
     @NotNull(message = "Duration not null")
@@ -25,12 +42,13 @@ public class MovieRequestDTO {
     @NotNull(message = "Release date not null")
     private LocalDate releaseDate;
 
+    // Giữ nguyên poseUrl theo yêu cầu
     @NotBlank(message = "Pose Url not blank")
     private String poseUrl;
 
     @NotBlank(message = "Trailer Url not blank")
     private String trailerUrl;
 
-    @NotBlank(message = "Status not null")
+    @NotBlank(message = "Status not blank")
     private String status;
 }

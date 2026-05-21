@@ -32,7 +32,7 @@ public class Room {
     @Column(name = "column_count", nullable = false)
     private Integer columnCount;
 
-    @Column(name = "total_seats", nullable = false)
+    @Column(name = "total_seats")
     private Integer totalSeats;
 
     @Column(name = "is_active")
