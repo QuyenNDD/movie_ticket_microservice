@@ -9,7 +9,12 @@ import com.movie.booking_service.entity.BookingSnack;
 import com.movie.booking_service.repository.BookingRepository;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
@@ -34,83 +39,189 @@ public class BookingServiceImpl implements BookingService{
     @Autowired
     private RestTemplate restTemplate;
 
+    private static final long SEAT_HOLD_TTL_SECONDS = 600; // 10 phút
+    private static final long BOOKING_CUTOFF_MINUTES = 15; // Khóa bán vé trước giờ chiếu 15 phút
+    private static final int MAX_SEATS_PER_BOOKING = 8;
+    private static final int MAX_SNACK_QUANTITY_PER_ITEM = 20;
+
+    @Value("${app.internal-secret}")
+    private String internalSecret;
+
     @Transactional
     public BookingResponseDTO holdSeats(String userId, BookingRequestDTO request) {
         String showtimeId = request.getShowtimeId();
         String redisKeyPrefix = "lock:showtime:" + showtimeId + ":seat:";
 
-        // 1. CHECK REDIS: Kiểm tra ghế có đang bị người khác giữ không?
-        for (BookingRequestDTO.SeatRequest seat : request.getSeats()) {
-            if (Boolean.TRUE.equals(redisTemplate.hasKey(redisKeyPrefix + seat.getSeatId()))) {
-                throw new RuntimeException("Ghế " + seat.getSeatId() + " vừa có người chọn mất rồi!");
-            }
+        if (showtimeId == null || showtimeId.isBlank()) {
+            throw new RuntimeException("Thiếu thông tin suất chiếu!");
         }
 
-        // 2. CHECK DATABASE: Kiểm tra ghế đã bán chưa?
-        List<String> seatIds = request.getSeats().stream().map(BookingRequestDTO.SeatRequest::getSeatId).toList();
+        if (request.getSeats() == null || request.getSeats().isEmpty()) {
+            throw new RuntimeException("Vui lòng chọn ít nhất 1 ghế!");
+        }
+
+        // 1. Check suất chiếu còn mở bán không
+        ShowtimeResponseDTO showtimeInfo = getAndValidateShowtimeForBooking(showtimeId);
+
+        // 2. Lấy danh sách seatId
+        List<String> seatIds = request.getSeats()
+                .stream()
+                .map(BookingRequestDTO.SeatRequest::getSeatId)
+                .toList();
+
+        // 3. Check trùng ghế trong cùng request
+        long distinctSeatCount = seatIds.stream().distinct().count();
+
+        if (distinctSeatCount != seatIds.size()) {
+            throw new RuntimeException("Danh sách ghế có ghế bị trùng!");
+        }
+
+        // 4. Check DB: ghế đã thanh toán chưa
         if (bookingRepository.checkIfSeatsArePaid(showtimeId, seatIds)) {
-             throw new RuntimeException("Một trong các ghế bạn chọn đã được thanh toán!");
+            throw new RuntimeException("Một trong các ghế bạn chọn đã được thanh toán!");
         }
 
-        // 3. MAP DỮ LIỆU & TÍNH TỔNG TIỀN
-        Booking booking = modelMapper.map(request, Booking.class);
-        booking.setUserId(userId);
-        booking.setStatus("PENDING"); // Đặt trạng thái chờ thanh toán
+        // 5. Vá nhóm 9:
+        // - Check ghế có thuộc đúng phòng của suất chiếu không
+        // - Check ghế PAID/LOCKED/MAINTENANCE
+        // - Rule COUPLE
+        // - Không để lại ghế trống lẻ cô lập
+        validateSeatSelectionRules(showtimeId, showtimeInfo.getRoomId(), seatIds);
 
-        double totalPrice = 0.0; // Biến tính tổng tiền
+        List<String> lockedKeys = new ArrayList<>();
 
-        // 3.1 Xử lý Ghế
-        List<BookingSeat> bookingSeats = request.getSeats().stream().map(seatReq -> {
-            BookingSeat seat = modelMapper.map(seatReq, BookingSeat.class);
-            seat.setBooking(booking);
-            redisTemplate.opsForValue().set(redisKeyPrefix + seatReq.getSeatId(), "LOCKED", 300, TimeUnit.SECONDS);
-            return seat;
-        }).collect(Collectors.toList());
+        try {
+            // 6. Lock Redis bằng setIfAbsent để tránh 2 người giữ cùng ghế
+            for (String seatId : seatIds) {
+                String redisKey = redisKeyPrefix + seatId;
 
-        totalPrice = request.getSeats().stream()
-                .mapToDouble(BookingRequestDTO.SeatRequest::getPrice)
-                .sum();
+                Boolean locked = redisTemplate.opsForValue().setIfAbsent(
+                        redisKey,
+                        "LOCKED",
+                        SEAT_HOLD_TTL_SECONDS,
+                        TimeUnit.SECONDS
+                );
 
-        booking.setTotalPrice(totalPrice);
+                if (!Boolean.TRUE.equals(locked)) {
+                    throw new RuntimeException("Ghế " + seatId + " vừa có người chọn mất rồi!");
+                }
 
-        // 3.2 Xử lý Bắp nước (Nếu có)
-        if (request.getSnacks() != null && !request.getSnacks().isEmpty()) {
-            List<BookingSnack> bookingSnacks = request.getSnacks().stream().map(snackReq -> {
-                BookingSnack snack = modelMapper.map(snackReq, BookingSnack.class);
-                snack.setBooking(booking);
-                return snack;
-            }).collect(Collectors.toList());
+                lockedKeys.add(redisKey);
+            }
 
-            booking.setBookingSnacks(bookingSnacks);
+            // 7. Tạo booking
+            Booking booking = modelMapper.map(request, Booking.class);
+            booking.setUserId(userId);
+            booking.setStatus("PENDING");
 
-            // Cộng tiền bắp nước (Giá * Số lượng)
-            totalPrice += request.getSnacks().stream()
-                    .mapToDouble(s -> s.getPrice() * s.getQuantity())
-                    .sum();
+            double totalPrice = 0.0;
+
+            // 7.1 Xử lý ghế
+            List<BookingSeat> bookingSeats = new ArrayList<>();
+
+            for (BookingRequestDTO.SeatRequest seatReq : request.getSeats()) {
+                Double seatPrice = getSeatPriceFromCatalog(showtimeId, seatReq.getSeatId());
+
+                BookingSeat seat = new BookingSeat();
+                seat.setSeatId(seatReq.getSeatId());
+                seat.setPriceAtPurchase(seatPrice);
+                seat.setBooking(booking);
+
+                bookingSeats.add(seat);
+                totalPrice += seatPrice;
+            }
+
+            booking.setBookingSeats(bookingSeats);
+
+            // 7.2 Xử lý snack
+            if (request.getSnacks() != null && !request.getSnacks().isEmpty()) {
+                List<BookingSnack> bookingSnacks = new ArrayList<>();
+
+                for (BookingRequestDTO.SnackRequest snackReq : request.getSnacks()) {
+                    if (snackReq.getQuantity() == null || snackReq.getQuantity() <= 0) {
+                        throw new RuntimeException("Số lượng snack không hợp lệ!");
+                    }
+                    if (snackReq.getQuantity() > MAX_SNACK_QUANTITY_PER_ITEM) {
+                        throw new RuntimeException("Mỗi loại snack chỉ được đặt tối đa "
+                                + MAX_SNACK_QUANTITY_PER_ITEM + " phần!");
+                    }
+
+                    Double snackPrice = getSnackPriceFromCatalog(snackReq.getSnackId());
+
+                    BookingSnack snack = new BookingSnack();
+                    snack.setSnackId(snackReq.getSnackId());
+                    snack.setQuantity(snackReq.getQuantity());
+                    snack.setPriceAtPurchase(snackPrice);
+                    snack.setBooking(booking);
+
+                    bookingSnacks.add(snack);
+                    totalPrice += snackPrice * snackReq.getQuantity();
+                }
+
+                booking.setBookingSnacks(bookingSnacks);
+            }
+
+            booking.setTotalPrice(totalPrice);
+
+            Booking savedBooking = bookingRepository.save(booking);
+
+            return BookingResponseDTO.builder()
+                    .bookingId(savedBooking.getId())
+                    .status("PENDING")
+                    .message("Giữ chỗ thành công! Vui lòng thanh toán trong 10 phút.")
+                    .expiresInSeconds((int) SEAT_HOLD_TTL_SECONDS)
+                    .totalPrice(savedBooking.getTotalPrice())
+                    .build();
+
+        } catch (RuntimeException ex) {
+            for (String key : lockedKeys) {
+                redisTemplate.delete(key);
+            }
+
+            throw ex;
+        }
+    }
+
+    private ShowtimeResponseDTO getAndValidateShowtimeForBooking(String showtimeId) {
+        String showtimeInfoUrl = "http://localhost:8080/api/v1/catalog/showtimes/" + showtimeId;
+        ShowtimeResponseDTO showtimeInfo = restTemplate.getForObject(showtimeInfoUrl, ShowtimeResponseDTO.class);
+
+        if (showtimeInfo == null) {
+            throw new RuntimeException("Không lấy được thông tin suất chiếu từ Catalog!");
         }
 
-        booking.setTotalPrice(totalPrice); // Chốt tổng tiền lưu vào DB
+        if (!"SCHEDULED".equalsIgnoreCase(showtimeInfo.getStatus())) {
+            throw new RuntimeException("Suất chiếu này đã bị hủy hoặc không còn mở bán!");
+        }
 
-        // 4. LƯU DATABASE
-        Booking savedBooking = bookingRepository.save(booking);
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime startTime = showtimeInfo.getStartTime();
 
-        // 5. TRẢ KẾT QUẢ CHO FRONTEND
-        return BookingResponseDTO.builder()
-                .bookingId(savedBooking.getId()) // Lấy ID từ biến mới
-                .status("PENDING")
-                .message("Giữ chỗ thành công! Vui lòng thanh toán trong 5 phút.")
-                .totalPrice(savedBooking.getTotalPrice())
-                .expiresInSeconds(300)
-                .build();
+        if (startTime == null) {
+            throw new RuntimeException("Suất chiếu thiếu thông tin thời gian bắt đầu!");
+        }
+
+        if (!startTime.isAfter(now)) {
+            throw new RuntimeException("Suất chiếu này đã diễn ra, không thể đặt vé!");
+        }
+
+        if (!startTime.isAfter(now.plusMinutes(BOOKING_CUTOFF_MINUTES))) {
+            throw new RuntimeException("Suất chiếu sắp bắt đầu trong vòng 15 phút, hệ thống đã khóa bán vé!");
+        }
+
+        return showtimeInfo;
     }
 
     @Override
     public RoomSeatMatrixResponseDTO getSeatsForShowtime(String showtimeId) {
-        String showtimeInfoUrl = "http://localhost:8080/api/v1/catalog/showtimes/" + showtimeId;
-        ShowtimeResponseDTO showtimeInfo = restTemplate.getForObject(showtimeInfoUrl, ShowtimeResponseDTO.class);
+        ShowtimeResponseDTO showtimeInfo = getAndValidateShowtimeForBooking(showtimeId);
 
         if (showtimeInfo == null || showtimeInfo.getRoomId() == null) {
             throw new RuntimeException("Lấy thông tin suất chiếu từ Catalog thất bại!");
+        }
+
+        if (!"SCHEDULED".equalsIgnoreCase(showtimeInfo.getStatus())) {
+            throw new RuntimeException("Suất chiếu này đã bị hủy hoặc không còn mở bán!");
         }
 
         String roomId = showtimeInfo.getRoomId();
@@ -120,7 +231,7 @@ public class BookingServiceImpl implements BookingService{
         // 2. LẤY BẢN ĐỒ GHẾ GỐC TỪ CATALOG
         // ==========================================
         String catalogUrl = "http://localhost:8080/api/v1/catalog/rooms/internal/" + roomId + "/seats";
-        SeatStatusResponseDTO[] rawSeatsArray = restTemplate.getForObject(catalogUrl, SeatStatusResponseDTO[].class);
+        SeatStatusResponseDTO[] rawSeatsArray = internalGet(catalogUrl, SeatStatusResponseDTO[].class);
 
         if (rawSeatsArray == null || rawSeatsArray.length == 0) {
             // Nếu rạp chưa xếp ghế, trả về đối tượng rỗng an toàn cho FE
@@ -148,7 +259,9 @@ public class BookingServiceImpl implements BookingService{
             String seatKey = redisKeyPrefix + seat.getId();
 
             // Tô màu
-            if (paidSeatIds.contains(seat.getId())) {
+            if ("MAINTENANCE".equalsIgnoreCase(seat.getSeatType())) {
+                seat.setStatus("MAINTENANCE");
+            } else if (paidSeatIds.contains(seat.getId())) {
                 seat.setStatus("PAID");
             } else if (lockedSeatKeys != null && lockedSeatKeys.contains(seatKey)) {
                 seat.setStatus("LOCKED");
@@ -213,40 +326,64 @@ public class BookingServiceImpl implements BookingService{
     @Override
     @Transactional
     public BookingResponseDTO confirmPayment(String userId, String bookingId) {
-        // 1. Tìm hóa đơn trong Database
-        Booking booking = bookingRepository.findById(bookingId)
+        // Dùng PESSIMISTIC_WRITE để tránh 2 request cùng confirm 1 booking
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy hóa đơn này!"));
 
-        // ==========================================
-        // 2. KIỂM TRA BẢO MẬT (Chính chủ)
-        // ==========================================
+        // Kiểm tra chính chủ
         if (!booking.getUserId().equals(userId)) {
             throw new RuntimeException("Lỗi bảo mật: Bạn không có quyền thanh toán hóa đơn của người khác!");
         }
 
-        // 3. Kiểm tra xem hóa đơn có đang ở trạng thái chờ không?
-        if (!"PENDING".equals(booking.getStatus())) {
-            throw new RuntimeException("Hóa đơn này đã được xử lý hoặc đã hết thời gian giữ chỗ!");
+        // Chống thanh toán đúp
+        if ("PAID".equalsIgnoreCase(booking.getStatus())) {
+            throw new RuntimeException("Hóa đơn này đã được thanh toán trước đó, không thể thanh toán lại!");
         }
 
-        // 4. Chốt đơn: Đổi trạng thái thành ĐÃ THANH TOÁN
+        // Chặn thanh toán booking đã hủy
+        if ("CANCELLED".equalsIgnoreCase(booking.getStatus())) {
+            throw new RuntimeException("Hóa đơn này đã bị hủy hoặc đã hết hạn thanh toán!");
+        }
+
+        // Chỉ cho phép thanh toán khi booking còn PENDING
+        if (!"PENDING".equalsIgnoreCase(booking.getStatus())) {
+            throw new RuntimeException("Hóa đơn này không ở trạng thái chờ thanh toán!");
+        }
+
+        // Nếu bạn đã vá nhóm 2, giữ đoạn check hết hạn 10 phút này
+        LocalDateTime expiredAt = booking.getBookingTime().plusSeconds(SEAT_HOLD_TTL_SECONDS);
+
+        if (LocalDateTime.now().isAfter(expiredAt)) {
+            booking.setStatus("CANCELLED");
+            bookingRepository.save(booking);
+
+            String redisKeyPrefix = "lock:showtime:" + booking.getShowtimeId() + ":seat:";
+            for (BookingSeat seat : booking.getBookingSeats()) {
+                redisTemplate.delete(redisKeyPrefix + seat.getSeatId());
+            }
+
+            throw new RuntimeException("Hóa đơn đã quá thời gian thanh toán 10 phút!");
+        }
+
+        // Nếu bạn đã vá nhóm 2, giữ đoạn check suất chiếu này
+        getAndValidateShowtimeForBooking(booking.getShowtimeId());
+
+        // Chốt đơn
         booking.setStatus("PAID");
-        bookingRepository.save(booking);
+        Booking savedBooking = bookingRepository.save(booking);
 
-        // 5. GIẢI PHÓNG REDIS: Xóa khóa để ghế chính thức chuyển sang màu Đỏ (đã bán)
-        String showtimeId = booking.getShowtimeId();
-        String redisKeyPrefix = "lock:showtime:" + showtimeId + ":seat:";
+        // Xóa Redis lock
+        String redisKeyPrefix = "lock:showtime:" + savedBooking.getShowtimeId() + ":seat:";
 
-        for (BookingSeat seat : booking.getBookingSeats()) {
+        for (BookingSeat seat : savedBooking.getBookingSeats()) {
             redisTemplate.delete(redisKeyPrefix + seat.getSeatId());
         }
 
-        // 6. Trả kết quả về
         return BookingResponseDTO.builder()
-                .bookingId(booking.getId())
+                .bookingId(savedBooking.getId())
                 .status("PAID")
                 .message("Thanh toán thành công! Vé của bạn đã được xác nhận.")
-                .totalPrice(booking.getTotalPrice())
+                .totalPrice(savedBooking.getTotalPrice())
                 .build();
     }
 
@@ -293,7 +430,7 @@ public class BookingServiceImpl implements BookingService{
 
         // Tính toán số giây còn lại (Thời hạn là 5 phút = 300 giây)
         long elapsedSeconds = Duration.between(booking.getBookingTime(), LocalDateTime.now()).getSeconds();
-        long remainingSeconds = 300 - elapsedSeconds;
+        long remainingSeconds = SEAT_HOLD_TTL_SECONDS - elapsedSeconds;
 
         // Nếu quá 5 phút mà Cron Job chưa kịp quét, ta chủ động ép về 0 giây
         if (remainingSeconds < 0 || "CANCELLED".equals(booking.getStatus())) {
@@ -307,5 +444,262 @@ public class BookingServiceImpl implements BookingService{
                 .expiresInSeconds(remainingSeconds) // Trả về số giây còn lại cho FE
                 .message("Lấy thông tin hóa đơn thành công.")
                 .build();
+    }
+
+    @Override
+    public Double getSeatPriceFromCatalog(String showtimeId, String seatId) {
+        String url = "http://localhost:8080/api/v1/catalog/showtimes/" + showtimeId + "/seats/" + seatId + "/price";
+
+        Double price = internalGet(url, Double.class);
+
+        if (price == null) {
+            throw new RuntimeException("Không lấy được giá ghế từ Catalog!");
+        }
+
+        return price;
+    }
+
+    @Override
+    public boolean hasActiveBookingForShowtimes(List<String> showtimeIds) {
+        if (showtimeIds == null || showtimeIds.isEmpty()) {
+            return false;
+        }
+
+        List<String> activeStatuses = List.of("PENDING", "PAID");
+
+        return bookingRepository.existsActiveBookingByShowtimeIds(showtimeIds, activeStatuses);
+    }
+
+    @Override
+    public Double getSnackPriceFromCatalog(String snackId) {
+        String url = "http://localhost:8080/api/v1/catalog/snacks/" + snackId + "/price";
+        Double price = internalGet(url, Double.class);
+
+        if (price == null) {
+            throw new RuntimeException("Không lấy được giá bắp nước từ Catalog!");
+        }
+
+        return price;
+    }
+
+    private <T> T internalGet(String url, Class<T> responseType) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Internal-Secret", internalSecret);
+
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+
+        ResponseEntity<T> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                entity,
+                responseType
+        );
+
+        return response.getBody();
+    }
+
+    private void validateSeatSelectionRules(String showtimeId, String roomId, List<String> selectedSeatIds) {
+        if (roomId == null || roomId.isBlank()) {
+            throw new RuntimeException("Suất chiếu thiếu thông tin phòng chiếu!");
+        }
+
+        if (selectedSeatIds == null || selectedSeatIds.isEmpty()) {
+            throw new RuntimeException("Vui lòng chọn ít nhất 1 ghế!");
+        }
+
+        List<SeatStatusResponseDTO> allSeats = loadSeatsWithCurrentStatus(showtimeId, roomId);
+
+        Map<String, SeatStatusResponseDTO> seatMap = allSeats.stream()
+                .collect(Collectors.toMap(
+                        SeatStatusResponseDTO::getId,
+                        seat -> seat,
+                        (oldValue, newValue) -> oldValue
+                ));
+
+        Set<String> selectedSet = new HashSet<>(selectedSeatIds);
+
+        int logicalSeatCount = 0;
+
+        for (String seatId : selectedSeatIds) {
+            if (seatId == null || seatId.isBlank()) {
+                throw new RuntimeException("ID ghế không hợp lệ!");
+            }
+
+            SeatStatusResponseDTO seat = seatMap.get(seatId);
+
+            if (seat == null) {
+                throw new RuntimeException("Ghế " + seatId + " không thuộc phòng chiếu của suất chiếu này!");
+            }
+
+            if ("PAID".equalsIgnoreCase(seat.getStatus())) {
+                throw new RuntimeException("Ghế " + buildSeatName(seat) + " đã được thanh toán!");
+            }
+
+            if ("LOCKED".equalsIgnoreCase(seat.getStatus())) {
+                throw new RuntimeException("Ghế " + buildSeatName(seat) + " đang được người khác giữ!");
+            }
+
+            if ("MAINTENANCE".equalsIgnoreCase(seat.getStatus())
+                    || "MAINTENANCE".equalsIgnoreCase(seat.getSeatType())) {
+                throw new RuntimeException("Ghế " + buildSeatName(seat) + " đang bảo trì, không thể đặt vé!");
+            }
+
+            // Rule COUPLE:
+            // 1 ghế COUPLE là 1 seatId vật lý nhưng tính là 2 chỗ ngồi.
+            if ("COUPLE".equalsIgnoreCase(seat.getSeatType())) {
+                logicalSeatCount += 2;
+            } else {
+                logicalSeatCount += 1;
+            }
+        }
+
+        if (logicalSeatCount > MAX_SEATS_PER_BOOKING) {
+            throw new RuntimeException("Mỗi đơn chỉ được mua tối đa "
+                    + MAX_SEATS_PER_BOOKING
+                    + " chỗ ngồi. Ghế COUPLE được tính là 2 chỗ.");
+        }
+
+        validateNoSingleOrphanSeat(allSeats, selectedSet);
+    }
+
+    private List<SeatStatusResponseDTO> loadSeatsWithCurrentStatus(String showtimeId, String roomId) {
+        String catalogUrl = "http://localhost:8080/api/v1/catalog/rooms/internal/" + roomId + "/seats";
+        SeatStatusResponseDTO[] rawSeatsArray = internalGet(catalogUrl, SeatStatusResponseDTO[].class);
+
+        if (rawSeatsArray == null || rawSeatsArray.length == 0) {
+            throw new RuntimeException("Phòng chiếu chưa có sơ đồ ghế!");
+        }
+
+        List<SeatStatusResponseDTO> seats = new ArrayList<>(Arrays.asList(rawSeatsArray));
+
+        List<String> paidSeatIds = bookingRepository.findPaidSeatIdsByShowtime(showtimeId);
+
+        String redisKeyPrefix = "lock:showtime:" + showtimeId + ":seat:";
+        Set<String> lockedSeatKeys = redisTemplate.keys(redisKeyPrefix + "*");
+
+        for (SeatStatusResponseDTO seat : seats) {
+            String seatKey = redisKeyPrefix + seat.getId();
+
+            if ("MAINTENANCE".equalsIgnoreCase(seat.getSeatType())) {
+                seat.setStatus("MAINTENANCE");
+            } else if (paidSeatIds.contains(seat.getId())) {
+                seat.setStatus("PAID");
+            } else if (lockedSeatKeys != null && lockedSeatKeys.contains(seatKey)) {
+                seat.setStatus("LOCKED");
+            } else {
+                seat.setStatus("AVAILABLE");
+            }
+        }
+
+        return seats;
+    }
+
+    private void validateNoSingleOrphanSeat(List<SeatStatusResponseDTO> allSeats, Set<String> selectedSeatIds) {
+        Map<Integer, List<SeatStatusResponseDTO>> groupedByRow = allSeats.stream()
+                .collect(Collectors.groupingBy(
+                        SeatStatusResponseDTO::getGridRow,
+                        TreeMap::new,
+                        Collectors.toList()
+                ));
+
+        for (List<SeatStatusResponseDTO> rowSeats : groupedByRow.values()) {
+            rowSeats.sort(Comparator.comparingInt(SeatStatusResponseDTO::getGridColumn));
+
+            List<List<SeatStatusResponseDTO>> continuousBlocks = splitByContinuousColumns(rowSeats);
+
+            for (List<SeatStatusResponseDTO> block : continuousBlocks) {
+                if (block.size() < 3) {
+                    continue;
+                }
+
+                for (int i = 1; i < block.size() - 1; i++) {
+                    SeatStatusResponseDTO current = block.get(i);
+                    SeatStatusResponseDTO left = block.get(i - 1);
+                    SeatStatusResponseDTO right = block.get(i + 1);
+
+                    boolean currentAvailableAfterSelection = isAvailableAfterSelection(current, selectedSeatIds);
+                    boolean leftUnavailableAfterSelection = isUnavailableAfterSelection(left, selectedSeatIds);
+                    boolean rightUnavailableAfterSelection = isUnavailableAfterSelection(right, selectedSeatIds);
+
+                    // Chặn case kiểu:
+                    // [Đã bán/đang chọn] [Trống lẻ] [Đã bán/đang chọn]
+                    if (currentAvailableAfterSelection
+                            && leftUnavailableAfterSelection
+                            && rightUnavailableAfterSelection) {
+                        throw new RuntimeException("Không thể chọn ghế vì sẽ để lại ghế trống lẻ cô lập: "
+                                + buildSeatName(current));
+                    }
+                }
+            }
+        }
+    }
+
+    private List<List<SeatStatusResponseDTO>> splitByContinuousColumns(List<SeatStatusResponseDTO> rowSeats) {
+        List<List<SeatStatusResponseDTO>> blocks = new ArrayList<>();
+
+        if (rowSeats == null || rowSeats.isEmpty()) {
+            return blocks;
+        }
+
+        List<SeatStatusResponseDTO> currentBlock = new ArrayList<>();
+        currentBlock.add(rowSeats.get(0));
+
+        for (int i = 1; i < rowSeats.size(); i++) {
+            SeatStatusResponseDTO previous = rowSeats.get(i - 1);
+            SeatStatusResponseDTO current = rowSeats.get(i);
+
+            // Nếu column không liền nhau, xem như có lối đi ở giữa.
+            // Không kiểm tra ghế lẻ xuyên qua lối đi.
+            if (current.getGridColumn() == previous.getGridColumn() + 1) {
+                currentBlock.add(current);
+            } else {
+                blocks.add(currentBlock);
+                currentBlock = new ArrayList<>();
+                currentBlock.add(current);
+            }
+        }
+
+        blocks.add(currentBlock);
+        return blocks;
+    }
+
+    private boolean isAvailableAfterSelection(SeatStatusResponseDTO seat, Set<String> selectedSeatIds) {
+        return !isUnavailableAfterSelection(seat, selectedSeatIds);
+    }
+
+    private boolean isUnavailableAfterSelection(SeatStatusResponseDTO seat, Set<String> selectedSeatIds) {
+        if (seat == null) {
+            return true;
+        }
+
+        if (selectedSeatIds.contains(seat.getId())) {
+            return true;
+        }
+
+        if ("PAID".equalsIgnoreCase(seat.getStatus())) {
+            return true;
+        }
+
+        if ("LOCKED".equalsIgnoreCase(seat.getStatus())) {
+            return true;
+        }
+
+        if ("MAINTENANCE".equalsIgnoreCase(seat.getStatus())
+                || "MAINTENANCE".equalsIgnoreCase(seat.getSeatType())) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private String buildSeatName(SeatStatusResponseDTO seat) {
+        if (seat == null) {
+            return "";
+        }
+
+        String row = seat.getRowName() == null ? "" : seat.getRowName();
+        String label = seat.getSeatLabel() == null ? "" : seat.getSeatLabel();
+
+        return row + label;
     }
 }

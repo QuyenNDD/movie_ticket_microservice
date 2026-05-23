@@ -15,17 +15,7 @@ public class ModelMapperConfig {
     @Bean
     public ModelMapper modelMapper() {
         ModelMapper mapper = new ModelMapper();
-        // Set STRICT để tránh map nhầm các field có tên na ná nhau
         mapper.getConfiguration().setMatchingStrategy(MatchingStrategies.STRICT);
-
-        // Dạy ModelMapper cách map SeatRequest -> BookingSeat (Khác tên biến price -> priceAtPurchase)
-        TypeMap<BookingRequestDTO.SeatRequest, BookingSeat> seatMap = mapper.createTypeMap(BookingRequestDTO.SeatRequest.class, BookingSeat.class);
-        seatMap.addMapping(BookingRequestDTO.SeatRequest::getPrice, BookingSeat::setPriceAtPurchase);
-
-        // Dạy ModelMapper cách map SnackRequest -> BookingSnack
-        TypeMap<BookingRequestDTO.SnackRequest, BookingSnack> snackMap = mapper.createTypeMap(BookingRequestDTO.SnackRequest.class, BookingSnack.class);
-        snackMap.addMapping(BookingRequestDTO.SnackRequest::getPrice, BookingSnack::setPriceAtPurchase);
-
         return mapper;
     }
 

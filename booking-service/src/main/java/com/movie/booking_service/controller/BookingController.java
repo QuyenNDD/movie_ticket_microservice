@@ -62,4 +62,10 @@ public class BookingController {
         // Trả về JSON giàu thông tin cùng HTTP Status 200 OK
         return ResponseEntity.ok(response);
     }
+
+    @PostMapping("/internal/showtimes/has-active-bookings")
+    public ResponseEntity<Boolean> hasActiveBookingsForShowtimes(@RequestBody List<String> showtimeIds) {
+        boolean result = bookingService.hasActiveBookingForShowtimes(showtimeIds);
+        return ResponseEntity.ok(result);
+    }
 }

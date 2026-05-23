@@ -15,4 +15,6 @@ public interface CinemaService {
 
     CinemaResponse getAllCinemas(Boolean isActive, Integer pageNumber, Integer pageSize, String sortBy, String sortOrder);
     CinemaResponse searchCinemas(String name, String city, Boolean isActive, Integer pageNumber, Integer pageSize, String sortBy, String sortOrder);
+
+    CinemaResponseDTO reopenCinema(String cinemaId);
 }

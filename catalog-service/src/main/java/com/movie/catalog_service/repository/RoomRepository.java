@@ -9,6 +9,6 @@ import java.util.List;
 @Repository
 public interface RoomRepository extends JpaRepository<Room, String> {
     List<Room> findByCinemaIdAndIsActiveTrue(String cinemaId);
-
+    List<Room> findByCinemaId(String cinemaId);
     boolean existsByCinemaIdAndName(String cinemaId, String name);
 }

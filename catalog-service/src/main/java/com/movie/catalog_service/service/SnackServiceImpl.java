@@ -32,7 +32,7 @@ public class SnackServiceImpl implements SnackService{
                 ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageDetails = PageRequest.of(pageNumber, pageSize, sortByAndOrder);
-        Page<Snack> snackPage = snackRepository.filterSnacks(isActive, pageDetails);
+        Page<Snack> snackPage = snackRepository.filterSnacks(null, pageDetails);
         List<Snack> snacks = snackPage.getContent();
         List<SnackResponseDTO> snackResponseDTOS = snacks.stream()
                 .map(snack -> modelMapper.map(snack, SnackResponseDTO.class))

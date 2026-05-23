@@ -1,5 +1,6 @@
 package com.movie.catalog_service.dto.request;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -15,7 +16,7 @@ public class SnackRequestDTO {
     private String description;
 
     @NotNull(message = "Price is not null")
-    @Min(value = 0, message = "Price is not negative")
+    @DecimalMin(value = "1000.0", message = "Giá snack phải từ 1000 trở lên")
     private Double price;
 
     @NotBlank(message = "Image is not blank")

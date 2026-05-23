@@ -1,46 +1,50 @@
 server:
-  port: 8080
+  port: ${API_GATEWAY_PORT:8080}
 
 spring:
   application:
     name: api-gateway
+
   cloud:
     gateway:
       routes:
         - id: auth-service
-          uri: http://host.docker.internal:8083
+          uri: ${AUTH_SERVICE_URL:http://host.docker.internal:8083}
           predicates:
             - Path=/api/v1/auth/**
 
-        - id: catalog-service-public
-          uri: http://host.docker.internal:8081
+        - id: catalog-service-public-movies
+          uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
           predicates:
-            - Path=/api/v1/catalog/**
+            - Path=/api/v1/catalog/movies/**,/api/v1/catalog/cinemas/**,/api/v1/catalog/showtimes/**
             - Method=GET
 
         - id: catalog-service-protected
-          uri: http://host.docker.internal:8081
+          uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
           predicates:
             - Path=/api/v1/catalog/**
-            - Method=POST,PUT,DELETE
           filters:
             - AuthenticationFilter
 
         - id: booking-service
-          uri: http://host.docker.internal:8082
+          uri: ${BOOKING_SERVICE_URL:http://host.docker.internal:8082}
           predicates:
             - Path=/api/v1/booking/**
           filters:
             - AuthenticationFilter
 
         - id: payment-service
-          uri: http://host.docker.internal:8084
+          uri: ${PAYMENT_SERVICE_URL:http://host.docker.internal:8084}
           predicates:
             - Path=/api/v1/payment/**
           filters:
             - AuthenticationFilter
+
   movie:
     jwt:
-      secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
-      expirationMs: 86400000
-      refresh-expiration: 604800000
+      secret: ${JWT_SECRET}
+      expirationMs: ${JWT_EXPIRATION_MS:86400000}
+      refresh-expiration: ${JWT_REFRESH_EXPIRATION_MS:604800000}
+
+app:
+  gateway-secret: ${GATEWAY_SECRET}

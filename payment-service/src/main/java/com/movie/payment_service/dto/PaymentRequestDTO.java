@@ -5,5 +5,4 @@ import lombok.Data;
 @Data
 public class PaymentRequestDTO {
     private String bookingId;
-    private String amount;
 }

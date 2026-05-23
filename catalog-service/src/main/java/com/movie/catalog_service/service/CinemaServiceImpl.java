@@ -6,9 +6,12 @@ import com.movie.catalog_service.dto.response.CinemaResponseDTO;
 import com.movie.catalog_service.dto.response.RoomResponseDTO;
 import com.movie.catalog_service.entity.Cinema;
 import com.movie.catalog_service.entity.Room;
+import com.movie.catalog_service.entity.ShowtimeStatus;
 import com.movie.catalog_service.exception.APIException;
 import com.movie.catalog_service.exception.ResourceNotFoundException;
 import com.movie.catalog_service.repository.CinemaRepository;
+import com.movie.catalog_service.repository.RoomRepository;
+import com.movie.catalog_service.repository.ShowtimeRepository;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -16,7 +19,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -27,6 +32,12 @@ public class CinemaServiceImpl implements CinemaService{
 
     @Autowired
     private ModelMapper modelMapper;
+
+    @Autowired
+    private RoomRepository roomRepository;
+
+    @Autowired
+    private ShowtimeRepository showtimeRepository;
 
     @Override
     public CinemaResponseDTO createCinema(CinemaRequestDTO request) {
@@ -84,9 +95,18 @@ public class CinemaServiceImpl implements CinemaService{
     }
 
     @Override
+    @Transactional
     public CinemaResponseDTO deleteCinema(String cinemaId) {
         Cinema cinema = cinemaRepository.findById(cinemaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Cinema", "id", cinemaId));
+
+        // Khi rạp dừng hoạt động:
+        // 1. Hủy toàn bộ suất chiếu tương lai của rạp.
+        // 2. Đánh dấu toàn bộ phòng trong rạp là inactive.
+        // 3. Đánh dấu rạp inactive.
+        cancelFutureShowtimesOfCinema(cinemaId);
+        deactivateRoomsOfCinema(cinemaId);
+
         cinema.setIsActive(false);
 
         Cinema savedCinema = cinemaRepository.save(cinema);
@@ -100,7 +120,7 @@ public class CinemaServiceImpl implements CinemaService{
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(pageNumber, pageSize, sort);
 
-        Page<Cinema> pageCinema = cinemaRepository.searchCinemas(null, null, isActive, pageable);
+        Page<Cinema> pageCinema = cinemaRepository.searchCinemas(null, null, null, pageable);
 
         List<CinemaResponseDTO> cinemaDTOs = pageCinema.getContent().stream()
                 .map(cinema -> modelMapper.map(cinema, CinemaResponseDTO.class))
@@ -138,5 +158,43 @@ public class CinemaServiceImpl implements CinemaService{
         response.setLastPage(pageCinema.isLast());
 
         return response;
+    }
+
+    @Override
+    @Transactional
+    public CinemaResponseDTO reopenCinema(String cinemaId) {
+        Cinema cinema = cinemaRepository.findById(cinemaId)
+                .orElseThrow(() -> new ResourceNotFoundException("Cinema", "id", cinemaId));
+
+        cinema.setIsActive(true);
+
+        Cinema savedCinema = cinemaRepository.save(cinema);
+
+        return modelMapper.map(savedCinema, CinemaResponseDTO.class);
+    }
+
+    private void cancelFutureShowtimesOfCinema(String cinemaId) {
+        int cancelledCount = showtimeRepository.cancelFutureScheduledShowtimesByCinemaId(
+                cinemaId,
+                LocalDateTime.now(),
+                ShowtimeStatus.SCHEDULED,
+                ShowtimeStatus.CANCELLED
+        );
+
+        System.out.println(">>> Đã hủy " + cancelledCount + " suất chiếu tương lai của rạp " + cinemaId);
+    }
+
+    private void deactivateRoomsOfCinema(String cinemaId) {
+        List<Room> rooms = roomRepository.findByCinemaId(cinemaId);
+
+        if (rooms == null || rooms.isEmpty()) {
+            return;
+        }
+
+        for (Room room : rooms) {
+            room.setIsActive(false);
+        }
+
+        roomRepository.saveAll(rooms);
     }
 }

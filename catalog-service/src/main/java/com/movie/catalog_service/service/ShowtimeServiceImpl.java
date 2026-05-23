@@ -40,6 +40,10 @@ public class ShowtimeServiceImpl implements ShowtimeService{
         Movie movie = movieRepository.findById(request.getMovieId())
                 .orElseThrow(() -> new ResourceNotFoundException("Movie", "id", request.getMovieId()));
 
+        if (!"ACTIVE".equalsIgnoreCase(movie.getStatus())) {
+            throw new APIException("Không thể tạo lịch chiếu cho phim đã dừng chiếu hoặc chưa hoạt động!");
+        }
+
         Room room = roomRepository.findById(request.getRoomId())
                 .orElseThrow(() -> new ResourceNotFoundException("Room", "id", request.getRoomId()));
 
@@ -47,12 +51,22 @@ public class ShowtimeServiceImpl implements ShowtimeService{
             throw new APIException("Phòng chiếu này hiện đang bảo trì, không thể tạo lịch chiếu!");
         }
 
+        if (!Boolean.TRUE.equals(room.getCinema().getIsActive())) {
+            throw new APIException("Rạp chiếu này đã dừng hoạt động, không thể tạo lịch chiếu!");
+        }
+
         Integer movieDuration = movie.getDuration();
         LocalDateTime newStartTime = request.getStartTime();
+        if (!newStartTime.isAfter(LocalDateTime.now())) {
+            throw new APIException("Thời gian bắt đầu suất chiếu phải nằm trong tương lai!");
+        }
         LocalDateTime newEndTime = newStartTime.plusMinutes(movieDuration + CLEANING_TIME_MINUTES);
 
         boolean isOverlap = showtimeRepository.existsOverlappingShowtime(
-                room.getId(), newStartTime, newEndTime
+                room.getId(),
+                newStartTime,
+                newEndTime,
+                ShowtimeStatus.SCHEDULED
         );
 
         if (isOverlap) {
@@ -84,7 +98,11 @@ public class ShowtimeServiceImpl implements ShowtimeService{
     // Lấy theo Rạp
     @Override
     public List<ShowtimeResponseDTO> getShowtimesByCinemaAndDate(String cinemaId, LocalDateTime date) {
-        List<Showtime> showtimes = showtimeRepository.findShowtimesByCinemaAndDate(cinemaId, date);
+        List<Showtime> showtimes = showtimeRepository.findShowtimesByCinemaAndDate(
+                cinemaId,
+                date,
+                ShowtimeStatus.SCHEDULED
+        );
         return showtimes.stream()
                 .map(this::mapToResponseDTO) // Tách phần map DTO ra 1 hàm private cho gọn
                 .collect(Collectors.toList());
@@ -92,7 +110,11 @@ public class ShowtimeServiceImpl implements ShowtimeService{
 
     @Override
     public List<ShowtimeResponseDTO> getShowtimesByMovieAndDate(String movieId, LocalDateTime date) {
-        List<Showtime> showtimes = showtimeRepository.findShowtimesByMovieAndDate(movieId, date);
+        List<Showtime> showtimes = showtimeRepository.findShowtimesByMovieAndDate(
+                movieId,
+                date,
+                ShowtimeStatus.SCHEDULED
+        );
         return showtimes.stream()
                 .map(this::mapToResponseDTO)
                 .collect(Collectors.toList());

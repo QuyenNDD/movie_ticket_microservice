@@ -1,56 +1,90 @@
 package com.movie.payment_service.service;
 
 import com.movie.payment_service.dto.MoMoIpnDTO;
+import com.movie.payment_service.entity.PaymentStatus;
+import com.movie.payment_service.entity.PaymentTransaction;
+import com.movie.payment_service.repository.PaymentTransactionRepository;
 import com.movie.payment_service.util.HmacSHA256Util;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
 @Service
-public class MomoServiceImpl implements MomoService{
-//    @Value("${momo.partner-code}")
-    private String partnerCode = "MOMO5RGX20191128";
+public class MomoServiceImpl implements MomoService {
 
-//    @Value("${momo.access-key}")
-    private String accessKey = "M8brj9K6E22vXoDB";
+    @Value("${momo.partner-code}")
+    private String partnerCode;
 
-//    @Value("${momo.secret-key}")
-    private String secretKey = "nqQiVSgDMy809JoPF6OzP5OdBUB550Y4";
+    @Value("${momo.access-key}")
+    private String accessKey;
 
-//    @Value("${momo.endpoint}")
-    private String endpoint = "https://test-payment.momo.vn/v2/gateway/api/create";
+    @Value("${momo.secret-key}")
+    private String secretKey;
 
-//    @Value("${momo.return-url}")
-    private String returnUrl = "http://localhost:3000/payment-result";
+    @Value("${momo.endpoint}")
+    private String endpoint;
 
-//    @Value("${momo.notify-url}")
-    private String notifyUrl = "https://hungry-pleading-baritone.ngrok-free.dev/api/v1/payment/momo/ipn";
+    @Value("${momo.return-url}")
+    private String returnUrl;
+
+    @Value("${momo.notify-url}")
+    private String notifyUrl;
+
+    @Value("${app.internal-secret}")
+    private String internalSecret;
+
+    @Value("${app.payment-retry.max-retry-count:10}")
+    private int maxRetryCount;
+
+    private static final String BOOKING_SERVICE_BASE_URL = "http://localhost:8082/api/v1/booking";
+
+    @Autowired
+    private PaymentTransactionRepository paymentTransactionRepository;
 
     @Override
-    public String createPayment(String userId, String bookingId, String amount) {
-        // 1. Tạo OrderId độc nhất (Mã hóa đơn + Timestamp để không bị trùng)
-        String orderId = String.valueOf(System.currentTimeMillis());
+    @Transactional
+    public String createPayment(String userId, String bookingId) {
+        Map<String, Object> bookingDetail = getBookingDetail(userId, bookingId);
+
+        validateBookingCanCreatePayment(bookingDetail);
+
+        Long amountLong = extractAmountFromBooking(bookingDetail);
+
+        PaymentTransaction existingPayment = paymentTransactionRepository
+                .findByBookingId(bookingId)
+                .orElse(null);
+
+        if (existingPayment != null) {
+            if (PaymentStatus.SUCCESS.equals(existingPayment.getStatus())) {
+                throw new RuntimeException("Hóa đơn này đã thanh toán, không thể tạo QR mới!");
+            }
+
+            if (PaymentStatus.INIT.equals(existingPayment.getStatus())
+                    && existingPayment.getPayUrl() != null
+                    && !existingPayment.getPayUrl().isBlank()) {
+                return existingPayment.getPayUrl();
+            }
+        }
+
+        String orderId = bookingId + "_" + System.currentTimeMillis();
         String requestId = orderId;
         String orderInfo = "Thanh toan ve phim";
 
-        // 3. extraData BẮT BUỘC PHẢI MÃ HÓA BASE64 THEO CHUẨN MOMO V2
-        String extraData = "";
-        if (userId != null && !userId.isEmpty()) {
-            // Biến chuỗi UUID thành dạng mã hóa (VD: YjVmODhhN2Mt...)
-            extraData = Base64.getEncoder().encodeToString(userId.trim().getBytes());
-        }
+        String extraData = Base64.getEncoder()
+                .encodeToString(userId.trim().getBytes(StandardCharsets.UTF_8));
 
-        // 4. Ép amount về kiểu Long (Kiểu số nguyên)
-        Long amountLong = Long.parseLong(amount.trim());
-
-        // 5. Ghép chuỗi chuẩn form MoMo (Lưu ý: dùng amountLong và extraData đã mã hóa)
         String rawSignature = "accessKey=" + accessKey
                 + "&amount=" + amountLong
                 + "&extraData=" + extraData
@@ -62,19 +96,14 @@ public class MomoServiceImpl implements MomoService{
                 + "&requestId=" + requestId
                 + "&requestType=captureWallet";
 
-        // 6. Ký chữ ký số
         String signature = HmacSHA256Util.encode(secretKey, rawSignature);
 
-        // 7. SỬA THÀNH Map<String, Object> ĐỂ JACKSON GỬI KIỂU NUMBER XUỐNG CHO MOMO
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("partnerCode", partnerCode);
         requestBody.put("partnerName", "Rap Phim Microservices");
         requestBody.put("storeId", "MomoTestStore");
         requestBody.put("requestId", requestId);
-
-        // Gửi thẳng biến kiểu Long vào, Jackson sẽ sinh ra JSON: "amount": 150000 (Không có dấu ngoặc kép)
         requestBody.put("amount", amountLong);
-
         requestBody.put("orderId", orderId);
         requestBody.put("orderInfo", orderInfo);
         requestBody.put("redirectUrl", returnUrl);
@@ -87,75 +116,310 @@ public class MomoServiceImpl implements MomoService{
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
 
-        // Lưu ý: Nhớ đổi HttpEntity thành Map<String, Object>
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
         RestTemplate restTemplate = new RestTemplate();
         Map<String, Object> response = restTemplate.postForObject(endpoint, requestEntity, Map.class);
 
-        if (response != null && response.containsKey("payUrl")) {
-            System.out.println(">>> LẤY LINK THÀNH CÔNG: " + response.get("payUrl"));
-            return response.get("payUrl").toString();
-        } else {
-            System.err.println(">>> LỖI TỪ MOMO TRẢ VỀ: " + response);
-            throw new RuntimeException("Tạo mã thanh toán MoMo thất bại!");
+        if (response == null || !response.containsKey("payUrl")) {
+            throw new RuntimeException("Tạo mã thanh toán MoMo thất bại! Response=" + response);
         }
+
+        String payUrl = response.get("payUrl").toString();
+
+        try {
+            PaymentTransaction payment = existingPayment != null ? existingPayment : new PaymentTransaction();
+
+            payment.setBookingId(bookingId);
+            payment.setUserId(userId);
+            payment.setOrderId(orderId);
+            payment.setRequestId(requestId);
+            payment.setAmount(amountLong);
+            payment.setPayUrl(payUrl);
+            payment.setStatus(PaymentStatus.INIT);
+
+            // Nếu trước đó payment FAILED và tạo lại QR mới thì reset dữ liệu cũ.
+            payment.setTransId(null);
+            payment.setPaidAt(null);
+
+            paymentTransactionRepository.save(payment);
+        } catch (DataIntegrityViolationException ex) {
+            PaymentTransaction duplicated = paymentTransactionRepository.findByBookingId(bookingId)
+                    .orElseThrow(() -> new RuntimeException("Đang có giao dịch thanh toán khác cho booking này!"));
+
+            if (duplicated.getPayUrl() != null && !duplicated.getPayUrl().isBlank()) {
+                return duplicated.getPayUrl();
+            }
+
+            throw new RuntimeException("Đang có giao dịch thanh toán khác cho booking này!");
+        }
+
+        return payUrl;
     }
 
     @Override
+    @Transactional
     public void processIpn(MoMoIpnDTO dto) {
-        // 1. KIỂM TRA BẢO MẬT: Băm lại dữ liệu xem có khớp chữ ký MoMo gửi không
-        // Công thức băm của IPN MoMo (Xếp theo thứ tự A-Z)
-        String rawHash = "accessKey=" + accessKey +
-                "&amount=" + dto.getAmount() +
-                "&extraData=" + dto.getExtraData() +
-                "&message=" + dto.getMessage() +
-                "&orderId=" + dto.getOrderId() +
-                "&orderInfo=" + dto.getOrderInfo() +
-                "&orderType=" + dto.getOrderType() +
-                "&partnerCode=" + dto.getPartnerCode() +
-                "&payType=" + dto.getPayType() +
-                "&requestId=" + dto.getRequestId() +
-                "&responseTime=" + dto.getResponseTime() +
-                "&resultCode=" + dto.getResultCode() +
-                "&transId=" + dto.getTransId();
+        validateMomoSignature(dto);
+
+        String bookingId = extractBookingIdFromOrderId(dto.getOrderId());
+
+        PaymentTransaction payment = paymentTransactionRepository
+                .findByOrderIdForUpdate(dto.getOrderId())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy payment transaction cho orderId: " + dto.getOrderId()));
+
+        if (PaymentStatus.SUCCESS.equals(payment.getStatus())) {
+            System.out.println(">>> Payment orderId " + dto.getOrderId() + " đã SUCCESS trước đó. Bỏ qua IPN lặp.");
+            return;
+        }
+
+        if (dto.getTransId() != null
+                && !dto.getTransId().isBlank()
+                && paymentTransactionRepository.existsByTransIdAndStatus(dto.getTransId(), PaymentStatus.SUCCESS)) {
+            System.out.println(">>> MoMo transId " + dto.getTransId() + " đã xử lý thành công trước đó. Bỏ qua IPN lặp.");
+            return;
+        }
+
+        if (dto.getResultCode() == null || dto.getResultCode() != 0) {
+            payment.setStatus(PaymentStatus.FAILED);
+            payment.setTransId(dto.getTransId());
+            paymentTransactionRepository.save(payment);
+
+            System.out.println(">>> Thanh toán MoMo thất bại hoặc khách hủy. orderId=" + dto.getOrderId());
+            return;
+        }
+
+        String userId = decodeExtraData(dto.getExtraData());
+
+        if (!bookingId.equals(payment.getBookingId())) {
+            throw new RuntimeException("orderId không khớp bookingId trong payment transaction!");
+        }
+
+        if (!userId.equals(payment.getUserId())) {
+            throw new RuntimeException("extraData userId không khớp payment transaction!");
+        }
+
+        Long momoAmount = Long.parseLong(dto.getAmount());
+
+        if (!payment.getAmount().equals(momoAmount)) {
+            throw new RuntimeException("Số tiền MoMo không khớp payment transaction! expected="
+                    + payment.getAmount() + ", actual=" + momoAmount);
+        }
+
+        Map<String, Object> bookingDetail = getBookingDetail(userId, bookingId);
+        Long bookingAmount = extractAmountFromBooking(bookingDetail);
+
+        if (!bookingAmount.equals(momoAmount)) {
+            throw new RuntimeException("Số tiền MoMo không khớp booking! bookingAmount="
+                    + bookingAmount + ", momoAmount=" + momoAmount);
+        }
+
+        String bookingStatus = String.valueOf(bookingDetail.get("status"));
+
+        if ("PAID".equalsIgnoreCase(bookingStatus)) {
+            payment.setStatus(PaymentStatus.SUCCESS);
+            payment.setTransId(dto.getTransId());
+            payment.setPaidAt(LocalDateTime.now());
+            paymentTransactionRepository.save(payment);
+
+            System.out.println(">>> Booking đã PAID trước đó. Đánh dấu payment SUCCESS và bỏ qua confirm.");
+            return;
+        }
+
+        if (!"PENDING".equalsIgnoreCase(bookingStatus)) {
+            throw new RuntimeException("Booking không còn ở trạng thái PENDING. Status hiện tại: " + bookingStatus);
+        }
+
+        payment.setStatus(PaymentStatus.CONFIRM_PENDING);
+        payment.setTransId(dto.getTransId());
+        payment.setPaidAt(LocalDateTime.now());
+        payment.setNextRetryAt(LocalDateTime.now().plusMinutes(1));
+        payment.setLastError(null);
+        paymentTransactionRepository.save(payment);
+
+        confirmBookingAndMarkSuccess(payment);
+
+        System.out.println(">>> [THÀNH CÔNG] Đã ghi nhận thanh toán MoMo cho hóa đơn " + bookingId);
+    }
+
+    private void validateMomoSignature(MoMoIpnDTO dto) {
+        String rawHash = "accessKey=" + accessKey
+                + "&amount=" + dto.getAmount()
+                + "&extraData=" + dto.getExtraData()
+                + "&message=" + dto.getMessage()
+                + "&orderId=" + dto.getOrderId()
+                + "&orderInfo=" + dto.getOrderInfo()
+                + "&orderType=" + dto.getOrderType()
+                + "&partnerCode=" + dto.getPartnerCode()
+                + "&payType=" + dto.getPayType()
+                + "&requestId=" + dto.getRequestId()
+                + "&responseTime=" + dto.getResponseTime()
+                + "&resultCode=" + dto.getResultCode()
+                + "&transId=" + dto.getTransId();
 
         String mySignature = HmacSHA256Util.encode(secretKey, rawHash);
 
         if (!mySignature.equals(dto.getSignature())) {
-            // Nếu chữ ký sai -> Bọn Hacker đang dùng Postman gọi fake vào Webhook của mình!
             throw new RuntimeException("CẢNH BÁO: Chữ ký IPN không hợp lệ. Đã chặn giao dịch giả mạo!");
         }
+    }
 
-        // 2. KIỂM TRA TRẠNG THÁI TIỀN VỀ
-        if (dto.getResultCode() == 0) {
-            System.out.println(">>> TIỀN ĐÃ VỀ TÀI KHOẢN! BẮT ĐẦU CHỐT ĐƠN...");
-
-            // Lấy lại bookingId (lúc nãy ta nối thêm Timestamp bằng dấu _, giờ cắt ra)
-            String bookingId = dto.getOrderId().split("_")[0];
-            // Lấy lại userId từ cái túi extraData
-            String userId = dto.getExtraData();
-
-            // 3. GỌI SANG BOOKING-SERVICE ĐỂ ĐỔI TRẠNG THÁI HÓA ĐƠN THÀNH 'PAID'
-            RestTemplate restTemplate = new RestTemplate();
-
-            // Gắn X-User-Id vào Header để lách qua chốt bảo mật của Booking Service
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("X-User-Id", userId);
-            HttpEntity<String> entity = new HttpEntity<>(null, headers);
-
-            String bookingServiceUrl = "http://localhost:8082/api/v1/booking/" + bookingId + "/confirm";
-
-            try {
-                // Dùng RestTemplate bắn 1 lệnh PUT sang Booking Service
-                restTemplate.exchange(bookingServiceUrl, org.springframework.http.HttpMethod.PUT, entity, String.class);
-                System.out.println(">>> [THÀNH CÔNG] Đã xác nhận hóa đơn " + bookingId + " cho user " + userId);
-            } catch (Exception e) {
-                System.err.println(">>> [LỖI] Tiền đã nhận nhưng lỗi khi gọi sang Booking Service: " + e.getMessage());
-                // (Thực tế đi làm sẽ cần đẩy vào RabbitMQ để xử lý đền bù (Retry), tạm thời in log)
-            }
-        } else {
-            System.out.println(">>> KHÁCH HÀNG HỦY THANH TOÁN HOẶC LỖI THẺ. Bỏ qua.");
+    private String extractBookingIdFromOrderId(String orderId) {
+        if (orderId == null || orderId.isBlank() || !orderId.contains("_")) {
+            throw new RuntimeException("orderId không hợp lệ. orderId phải có dạng bookingId_timestamp");
         }
+
+        return orderId.split("_")[0];
+    }
+
+    private Map<String, Object> getBookingDetail(String userId, String bookingId) {
+        RestTemplate restTemplate = new RestTemplate();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-User-Id", userId);
+        headers.set("X-Internal-Secret", internalSecret);
+
+        HttpEntity<String> entity = new HttpEntity<>(null, headers);
+
+        ResponseEntity<Map> response = restTemplate.exchange(
+                BOOKING_SERVICE_BASE_URL + "/" + bookingId,
+                HttpMethod.GET,
+                entity,
+                Map.class
+        );
+
+        return response.getBody();
+    }
+
+    private void callBookingConfirm(String userId, String bookingId) {
+        RestTemplate restTemplate = new RestTemplate();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-User-Id", userId);
+        headers.set("X-Internal-Secret", internalSecret);
+
+        HttpEntity<String> entity = new HttpEntity<>(null, headers);
+
+        String bookingServiceUrl = BOOKING_SERVICE_BASE_URL + "/" + bookingId + "/confirm";
+
+        restTemplate.exchange(
+                bookingServiceUrl,
+                HttpMethod.PUT,
+                entity,
+                String.class
+        );
+    }
+
+    private void validateBookingCanCreatePayment(Map<String, Object> bookingDetail) {
+        if (bookingDetail == null) {
+            throw new RuntimeException("Không lấy được thông tin booking!");
+        }
+
+        String status = String.valueOf(bookingDetail.get("status"));
+
+        if ("PAID".equalsIgnoreCase(status)) {
+            throw new RuntimeException("Hóa đơn này đã thanh toán, không thể tạo QR mới!");
+        }
+
+        if ("CANCELLED".equalsIgnoreCase(status)) {
+            throw new RuntimeException("Hóa đơn này đã bị hủy hoặc hết hạn, không thể thanh toán!");
+        }
+
+        if (!"PENDING".equalsIgnoreCase(status)) {
+            throw new RuntimeException("Hóa đơn không ở trạng thái chờ thanh toán!");
+        }
+
+        Object expiresInSecondsObj = bookingDetail.get("expiresInSeconds");
+
+        if (expiresInSecondsObj != null) {
+            long expiresInSeconds = Long.parseLong(expiresInSecondsObj.toString());
+
+            if (expiresInSeconds <= 0) {
+                throw new RuntimeException("Hóa đơn đã quá thời gian thanh toán, không thể tạo QR mới!");
+            }
+        }
+    }
+
+    private Long extractAmountFromBooking(Map<String, Object> bookingDetail) {
+        if (bookingDetail == null) {
+            throw new RuntimeException("Không lấy được thông tin booking!");
+        }
+
+        Object totalPriceObj = bookingDetail.get("totalPrice");
+
+        if (totalPriceObj == null) {
+            throw new RuntimeException("Booking không có tổng tiền!");
+        }
+
+        BigDecimal totalPrice = new BigDecimal(totalPriceObj.toString())
+                .setScale(0, RoundingMode.HALF_UP);
+
+        if (totalPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("Tổng tiền booking không hợp lệ!");
+        }
+
+        return totalPrice.longValueExact();
+    }
+
+    private String decodeExtraData(String extraData) {
+        if (extraData == null || extraData.isBlank()) {
+            throw new RuntimeException("IPN thiếu extraData!");
+        }
+
+        return new String(Base64.getDecoder().decode(extraData), StandardCharsets.UTF_8);
+    }
+    public void confirmBookingAndMarkSuccess(PaymentTransaction payment) {
+        try {
+            callBookingConfirm(payment.getUserId(), payment.getBookingId());
+
+            payment.setStatus(PaymentStatus.SUCCESS);
+            payment.setLastError(null);
+            payment.setNextRetryAt(null);
+            paymentTransactionRepository.save(payment);
+
+            System.out.println(">>> [THÀNH CÔNG] Đã confirm booking "
+                    + payment.getBookingId()
+                    + " cho user "
+                    + payment.getUserId());
+
+        } catch (Exception ex) {
+            int currentRetry = payment.getRetryCount() == null ? 0 : payment.getRetryCount();
+            int nextRetry = currentRetry + 1;
+
+            payment.setRetryCount(nextRetry);
+            payment.setStatus(PaymentStatus.CONFIRM_PENDING);
+            payment.setLastError(ex.getMessage());
+
+            if (nextRetry >= maxRetryCount) {
+                payment.setNextRetryAt(LocalDateTime.now().plusMinutes(30));
+            } else {
+                payment.setNextRetryAt(LocalDateTime.now().plusMinutes(calculateBackoffMinutes(nextRetry)));
+            }
+
+            paymentTransactionRepository.save(payment);
+
+            System.err.println(">>> [CẦN RETRY] MoMo đã thanh toán nhưng confirm booking lỗi. bookingId="
+                    + payment.getBookingId()
+                    + ", retryCount="
+                    + nextRetry
+                    + ", error="
+                    + ex.getMessage());
+        }
+    }
+
+    private long calculateBackoffMinutes(int retryCount) {
+        if (retryCount <= 1) {
+            return 1;
+        }
+
+        if (retryCount == 2) {
+            return 2;
+        }
+
+        if (retryCount == 3) {
+            return 5;
+        }
+
+        return 10;
     }
 }

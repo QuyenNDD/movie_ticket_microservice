@@ -21,7 +21,7 @@ public class BookingCleanupJob {
     @Transactional
     public void cleanupExpiredBookings() {
         // Mốc thời gian: Những gì xảy ra trước 5 phút tính từ bây giờ
-        LocalDateTime expirationThreshold = LocalDateTime.now().minusMinutes(5);
+        LocalDateTime expirationThreshold = LocalDateTime.now().minusMinutes(10);
 
         // Tìm hóa đơn PENDING có bookingTime cũ hơn 5 phút
         List<Booking> expiredBookings = bookingRepository.findExpiredBookings(expirationThreshold);
@@ -35,7 +35,7 @@ public class BookingCleanupJob {
 
             // Log này sẽ xuất hiện trong tab Console của IntelliJ/Eclipse
             System.out.println(">>> [HỆ THỐNG] Đã hủy " + expiredBookings.size() +
-                    " hóa đơn quá hạn thanh toán (dựa trên bookingTime).");
+                    " hóa đơn quá hạn thanh toán 10 phút.");
         }
     }
 }

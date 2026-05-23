@@ -4,9 +4,11 @@ import com.movie.catalog_service.dto.response.MovieResponse;
 import com.movie.catalog_service.dto.response.MovieResponseDTO;
 import com.movie.catalog_service.dto.request.MovieRequestDTO;
 import com.movie.catalog_service.entity.Movie;
+import com.movie.catalog_service.entity.ShowtimeStatus;
 import com.movie.catalog_service.exception.APIException;
 import com.movie.catalog_service.exception.ResourceNotFoundException;
 import com.movie.catalog_service.repository.MovieRepository;
+import com.movie.catalog_service.repository.ShowtimeRepository;
 import com.movie.catalog_service.service.file.FileUploadService;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,10 +17,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
@@ -32,6 +36,9 @@ public class MovieServiceImpl implements MovieService{
 
     @Autowired
     FileUploadService fileUploadService;
+
+    @Autowired
+    ShowtimeRepository showtimeRepository;
 
     @Override
     public MovieResponseDTO createMovie(MovieRequestDTO request) {
@@ -162,37 +169,77 @@ public class MovieServiceImpl implements MovieService{
     }
 
     @Override
+    @Transactional
     public MovieResponseDTO updateMovie(String movieId, MovieRequestDTO request) {
         Movie existingMovie = movieRepository.findById(movieId)
                 .orElseThrow(() -> new ResourceNotFoundException("Movie", "id", movieId));
 
-        if (!Objects.equals(existingMovie.getTitle(), request.getTitle())){
+        if (!Objects.equals(existingMovie.getTitle(), request.getTitle())) {
             if (movieRepository.existsByTitle(request.getTitle())) {
                 throw new APIException("Title " + request.getTitle() + " is available");
             }
+
             existingMovie.setTitle(request.getTitle());
         }
-        if (request.getReleaseDate().isBefore(LocalDate.now())){
+
+        if (request.getReleaseDate().isBefore(LocalDate.now())) {
             throw new APIException("Release day is not before now");
         }
+
+        String newStatus = request.getStatus().trim().toUpperCase();
+
+        existingMovie.setGenre(request.getGenre());
+        existingMovie.setCountry(request.getCountry());
+        existingMovie.setLanguage(request.getLanguage());
+        existingMovie.setAgeRestriction(request.getAgeRestriction());
+        existingMovie.setDirector(request.getDirector());
+        existingMovie.setActors(request.getActors());
+
         existingMovie.setDescription(request.getDescription());
         existingMovie.setDuration(request.getDuration());
         existingMovie.setReleaseDate(request.getReleaseDate());
         existingMovie.setPoseUrl(request.getPoseUrl());
         existingMovie.setTrailerUrl(request.getTrailerUrl());
-        existingMovie.setStatus(request.getStatus());
+        existingMovie.setStatus(newStatus);
 
         Movie savedMovie = movieRepository.save(existingMovie);
+
+        // Nếu phim bị chuyển sang trạng thái không hoạt động,
+        // tự động hủy toàn bộ suất chiếu tương lai còn SCHEDULED.
+        if (isMovieInactive(newStatus)) {
+            cancelFutureShowtimesOfMovie(movieId);
+        }
+
         return modelMapper.map(savedMovie, MovieResponseDTO.class);
     }
 
     @Override
+    @Transactional
     public MovieResponseDTO deleteMovie(String movieId) {
         Movie existingMovie = movieRepository.findById(movieId)
                 .orElseThrow(() -> new ResourceNotFoundException("Movie", "id", movieId));
+
         existingMovie.setStatus("STOPPED");
-        movieRepository.save(existingMovie);
-        return modelMapper.map(existingMovie, MovieResponseDTO.class);
+
+        Movie savedMovie = movieRepository.save(existingMovie);
+
+        cancelFutureShowtimesOfMovie(movieId);
+
+        return modelMapper.map(savedMovie, MovieResponseDTO.class);
     }
 
+    private boolean isMovieInactive(String status) {
+        return status == null || !"ACTIVE".equalsIgnoreCase(status);
+    }
+
+    private void cancelFutureShowtimesOfMovie(String movieId) {
+        int cancelledCount = showtimeRepository.cancelFutureScheduledShowtimesByMovieId(
+                movieId,
+                LocalDateTime.now(),
+                ShowtimeStatus.SCHEDULED,
+                ShowtimeStatus.CANCELLED
+        );
+
+        System.out.println(">>> Đã hủy " + cancelledCount + " suất chiếu tương lai của phim " + movieId);
+    }
 }

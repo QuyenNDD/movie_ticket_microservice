@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
+
 import java.util.List;
 
 @Data
@@ -20,24 +21,34 @@ public class RoomRequestDTO {
     private String name;
 
     @NotNull(message = "Số hàng của khung lưới không được để trống")
-    @Min(1) @Max(26)
-    private Integer totalRows; // Đại diện cho kích thước chiều dọc lớn nhất của phòng
+    @Min(value = 1, message = "Số hàng phải từ 1 trở lên")
+    @Max(value = 26, message = "Số hàng tối đa là 26")
+    private Integer totalRows;
 
     @NotNull(message = "Số cột của khung lưới không được để trống")
-    @Min(1) @Max(50)
-    private Integer totalColumns; // Đại diện cho kích thước chiều ngang lớn nhất của phòng
+    @Min(value = 1, message = "Số cột phải từ 1 trở lên")
+    @Max(value = 50, message = "Số cột tối đa là 50")
+    private Integer totalColumns;
 
     @NotEmpty(message = "Danh sách cấu hình ghế không được để trống")
     @Valid
     private List<SeatCreateRequest> seats;
 
-    // Class nội bộ đại diện cho từng cái ghế gửi lên
     @Data
     public static class SeatCreateRequest {
+        @NotNull(message = "rowIndex không được để trống")
+        @Min(value = 0, message = "rowIndex phải từ 0 trở lên")
         private Integer rowIndex;
+
+        @NotNull(message = "columnIndex không được để trống")
+        @Min(value = 0, message = "columnIndex phải từ 0 trở lên")
         private Integer columnIndex;
+
         private String rowLabel;
+
         private String columnLabel;
+
+        @NotBlank(message = "seatType không được để trống")
         private String seatType;
     }
 }

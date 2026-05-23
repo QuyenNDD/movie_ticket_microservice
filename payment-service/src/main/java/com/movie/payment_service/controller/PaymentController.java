@@ -19,12 +19,11 @@ public class PaymentController {
     // API này Frontend sẽ gọi để lấy link QR MoMo
     @PostMapping("/create")
     public ResponseEntity<Map<String, String>> createPayment(
-            @RequestHeader("X-User-Id") String userId, // Chặn lại để log thông tin nếu cần
+            @RequestHeader("X-User-Id") String userId,
             @RequestBody PaymentRequestDTO request) {
 
-        String payUrl = moMoService.createPayment(userId, request.getBookingId(), request.getAmount());
+        String payUrl = moMoService.createPayment(userId, request.getBookingId());
 
-        // Trả về chuỗi JSON chứa link cho FE
         Map<String, String> response = new HashMap<>();
         response.put("payUrl", payUrl);
 

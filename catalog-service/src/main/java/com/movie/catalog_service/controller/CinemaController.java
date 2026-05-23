@@ -45,6 +45,11 @@ public class CinemaController {
         return new ResponseEntity<>(cinemaService.deleteCinema(cinemaId), HttpStatus.OK);
     }
 
+    @PatchMapping("/{cinemaId}")
+    public ResponseEntity<CinemaResponseDTO> reopenCinema(@PathVariable String cinemaId) {
+        return new ResponseEntity<>(cinemaService.reopenCinema(cinemaId), HttpStatus.OK);
+    }
+
     // 5. Lấy danh sách rạp (Có phân trang)
     @GetMapping
     public ResponseEntity<CinemaResponse> getAllCinemas(

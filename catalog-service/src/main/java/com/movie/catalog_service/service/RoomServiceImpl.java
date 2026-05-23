@@ -8,6 +8,7 @@ import com.movie.catalog_service.dto.response.SeatResponseDTO;
 import com.movie.catalog_service.entity.Cinema;
 import com.movie.catalog_service.entity.Room;
 import com.movie.catalog_service.entity.Seat;
+import com.movie.catalog_service.entity.ShowtimeStatus;
 import com.movie.catalog_service.exception.APIException;
 import com.movie.catalog_service.exception.ResourceNotFoundException;
 import com.movie.catalog_service.repository.CinemaRepository;
@@ -17,7 +18,13 @@ import com.movie.catalog_service.repository.ShowtimeRepository;
 import jakarta.transaction.Transactional;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -36,12 +43,157 @@ public class RoomServiceImpl implements RoomService{
     @Autowired
     ShowtimeRepository showtimeRepository;
 
+    private static final String BOOKING_SERVICE_BASE_URL = "http://localhost:8082/api/v1/booking";
+
+    private static final Set<String> VALID_SEAT_TYPES = Set.of(
+            "NORMAL",
+            "VIP",
+            "COUPLE",
+            "MAINTENANCE",
+            "EMPTY"
+    );
+
+    @Value("${app.internal-secret}")
+    private String internalSecret;
+
+    private boolean hasActiveBookingsInRoom(String roomId) {
+        List<String> showtimeIds = showtimeRepository.findShowtimeIdsByRoomId(roomId);
+
+        if (showtimeIds == null || showtimeIds.isEmpty()) {
+            return false;
+        }
+
+        RestTemplate restTemplate = new RestTemplate();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Internal-Secret", internalSecret);
+
+        HttpEntity<List<String>> entity = new HttpEntity<>(showtimeIds, headers);
+
+        ResponseEntity<Boolean> response = restTemplate.exchange(
+                BOOKING_SERVICE_BASE_URL + "/internal/showtimes/has-active-bookings",
+                HttpMethod.POST,
+                entity,
+                Boolean.class
+        );
+
+        return Boolean.TRUE.equals(response.getBody());
+    }
+
+    private String normalizeSeatType(String seatType) {
+        if (seatType == null || seatType.isBlank()) {
+            throw new APIException("Loại ghế không được để trống!");
+        }
+
+        String normalized = seatType.trim().toUpperCase();
+
+        if (!VALID_SEAT_TYPES.contains(normalized)) {
+            throw new APIException("Loại ghế không hợp lệ! Chỉ cho phép: NORMAL, VIP, COUPLE, MAINTENANCE, EMPTY");
+        }
+
+        return normalized;
+    }
+
+    private void validateRoomLayout(RoomRequestDTO request) {
+        if (request.getTotalRows() == null || request.getTotalRows() < 1 || request.getTotalRows() > 26) {
+            throw new APIException("Số hàng của phòng phải nằm trong khoảng 1 đến 26!");
+        }
+
+        if (request.getTotalColumns() == null || request.getTotalColumns() < 1 || request.getTotalColumns() > 50) {
+            throw new APIException("Số cột của phòng phải nằm trong khoảng 1 đến 50!");
+        }
+
+        if (request.getSeats() == null || request.getSeats().isEmpty()) {
+            throw new APIException("Danh sách cấu hình ghế không được để trống!");
+        }
+
+        Set<String> usedGridPositions = new HashSet<>();
+        Set<String> usedSeatLabels = new HashSet<>();
+
+        for (RoomRequestDTO.SeatCreateRequest seatReq : request.getSeats()) {
+            validateSingleSeatInLayout(seatReq, request.getTotalRows(), request.getTotalColumns());
+
+            String gridKey = seatReq.getRowIndex() + "-" + seatReq.getColumnIndex();
+
+            if (!usedGridPositions.add(gridKey)) {
+                throw new APIException("Bị trùng tọa độ ghế tại rowIndex="
+                        + seatReq.getRowIndex() + ", columnIndex=" + seatReq.getColumnIndex());
+            }
+
+            String seatType = normalizeSeatType(seatReq.getSeatType());
+
+            if (!"EMPTY".equalsIgnoreCase(seatType)) {
+                String labelKey = seatReq.getRowLabel().trim().toUpperCase()
+                        + "-"
+                        + seatReq.getColumnLabel().trim().toUpperCase();
+
+                if (!usedSeatLabels.add(labelKey)) {
+                    throw new APIException("Bị trùng mã ghế: "
+                            + seatReq.getRowLabel() + seatReq.getColumnLabel());
+                }
+            }
+        }
+    }
+
+    private void validateSingleSeatInLayout(
+            RoomRequestDTO.SeatCreateRequest seatReq,
+            Integer totalRows,
+            Integer totalColumns
+    ) {
+        if (seatReq.getRowIndex() == null) {
+            throw new APIException("rowIndex không được để trống!");
+        }
+
+        if (seatReq.getColumnIndex() == null) {
+            throw new APIException("columnIndex không được để trống!");
+        }
+
+        if (seatReq.getRowIndex() < 0 || seatReq.getRowIndex() >= totalRows) {
+            throw new APIException("rowIndex không hợp lệ: " + seatReq.getRowIndex()
+                    + ". Giá trị hợp lệ là 0 đến " + (totalRows - 1));
+        }
+
+        if (seatReq.getColumnIndex() < 0 || seatReq.getColumnIndex() >= totalColumns) {
+            throw new APIException("columnIndex không hợp lệ: " + seatReq.getColumnIndex()
+                    + ". Giá trị hợp lệ là 0 đến " + (totalColumns - 1));
+        }
+
+        String seatType = normalizeSeatType(seatReq.getSeatType());
+
+        if (!"EMPTY".equalsIgnoreCase(seatType)) {
+            if (seatReq.getRowLabel() == null || seatReq.getRowLabel().isBlank()) {
+                throw new APIException("Ghế thật phải có rowLabel!");
+            }
+
+            if (seatReq.getColumnLabel() == null || seatReq.getColumnLabel().isBlank()) {
+                throw new APIException("Ghế thật phải có columnLabel!");
+            }
+
+            if (seatReq.getRowLabel().trim().length() > 2) {
+                throw new APIException("rowLabel không được dài quá 2 ký tự!");
+            }
+
+            if (seatReq.getColumnLabel().trim().length() > 3) {
+                throw new APIException("columnLabel không được dài quá 3 ký tự!");
+            }
+        }
+    }
+
+    private int toDatabaseGridIndex(Integer zeroBasedIndex) {
+        return zeroBasedIndex + 1;
+    }
+
     @Override
     @Transactional
     public RoomResponseDTO createRoom(RoomRequestDTO request) {
+        validateRoomLayout(request);
         // 1. Kiểm tra rạp có tồn tại không
         Cinema cinema = cinemaRepository.findById(request.getCinemaId())
                 .orElseThrow(() -> new ResourceNotFoundException("Cinema", "id", request.getCinemaId()));
+
+        if (!cinema.getIsActive()) {
+            throw new APIException("Rạp chiếu này đã dừng hoạt động, không thể tạo phòng chiếu mới!");
+        }
 
         // 2. Kiểm tra trùng tên phòng
         if (roomRepository.existsByCinemaIdAndName(request.getCinemaId(), request.getName())) {
@@ -63,22 +215,18 @@ public class RoomServiceImpl implements RoomService{
         // 4. XỬ LÝ LỌC VÀ LƯU DANH SÁCH GHẾ
         // ==========================================================
         List<Seat> seatsToSave = request.getSeats().stream()
-                // BƯỚC 4.1: Vứt bỏ toàn bộ những ô là lối đi (EMPTY)
+                .peek(seatReq -> normalizeSeatType(seatReq.getSeatType()))
                 .filter(seatReq -> !"EMPTY".equalsIgnoreCase(seatReq.getSeatType()))
-
-                // BƯỚC 4.2: Chuyển đổi từ DTO sang Entity
                 .map(seatReq -> {
                     Seat seat = new Seat();
-                    seat.setRoom(savedRoom); // Trỏ về ID phòng vừa tạo
+                    seat.setRoom(savedRoom);
 
-                    // Map trực tiếp các nhãn (Label)
-                    seat.setRowName(seatReq.getRowLabel());     // Ví dụ: "A", "B"
-                    seat.setSeatLabel(seatReq.getColumnLabel());// Ví dụ: "01", "01-02"
-                    seat.setSeatType(seatReq.getSeatType());    // Ví dụ: "SINGLE", "DOUBLE"
+                    seat.setRowName(seatReq.getRowLabel());
+                    seat.setSeatLabel(seatReq.getColumnLabel());
+                    seat.setSeatType(normalizeSeatType(seatReq.getSeatType()));
 
-                    // Map tọa độ: CỘNG 1 để khớp với hệ tọa độ của CSS Grid (bắt đầu từ 1)
-                    seat.setGridRow(seatReq.getRowIndex() + 1);
-                    seat.setGridColumn(seatReq.getColumnIndex() + 1);
+                    seat.setGridRow(toDatabaseGridIndex(seatReq.getRowIndex()));
+                    seat.setGridColumn(toDatabaseGridIndex(seatReq.getColumnIndex()));
 
                     return seat;
                 }).collect(Collectors.toList());
@@ -100,7 +248,7 @@ public class RoomServiceImpl implements RoomService{
 
     @Override
     public List<RoomResponseDTO> getRoomsByCinemaId(String cinemaId) {
-        return roomRepository.findByCinemaIdAndIsActiveTrue(cinemaId).stream().map(room -> {
+        return roomRepository.findByCinemaId(cinemaId).stream().map(room -> {
             RoomResponseDTO dto = modelMapper.map(room, RoomResponseDTO.class);
             dto.setCinemaName(room.getCinema().getName());
             return dto;
@@ -151,8 +299,13 @@ public class RoomServiceImpl implements RoomService{
 
     @Override
     public RoomResponseDTO updateRoom(String roomId, RoomRequestDTO request) {
+        validateRoomLayout(request);
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Room", "id", roomId));
+
+        if (hasActiveBookingsInRoom(roomId)) {
+            throw new APIException("Không thể cập nhật phòng/sơ đồ ghế vì phòng này đã có khách đặt vé!");
+        }
 
         // =========================================================================
         // 1. CHỈ CHẶN NẾU CÓ SUẤT CHIẾU TƯƠNG LAI ĐANG HOẠT ĐỘNG (KHÔNG PHẢI CANCELLED)
@@ -160,7 +313,7 @@ public class RoomServiceImpl implements RoomService{
         boolean hasActiveUpcomingShowtimes = showtimeRepository.existsByRoomIdAndStartTimeAfterAndStatusNot(
                 roomId,
                 LocalDateTime.now(),
-                "CANCELLED"
+                ShowtimeStatus.CANCELLED
         );
 
         if (hasActiveUpcomingShowtimes) {
@@ -187,16 +340,19 @@ public class RoomServiceImpl implements RoomService{
 
         // 3.2. Tạo danh sách ghế mới từ Request và đưa vào Room
         if (request.getSeats() != null && !request.getSeats().isEmpty()) {
-            List<Seat> newSeats = request.getSeats().stream().map(seatReq -> {
-                Seat seat = new Seat();
-                seat.setRoom(room); // Bắt buộc phải có để map quan hệ 2 chiều
-                seat.setRowName(seatReq.getRowLabel());
-                seat.setSeatLabel(seatReq.getColumnLabel());
-                seat.setSeatType(seatReq.getSeatType());
-                seat.setGridRow(seatReq.getRowIndex());
-                seat.setGridColumn(seatReq.getColumnIndex());
-                return seat;
-            }).collect(Collectors.toList());
+            List<Seat> newSeats = request.getSeats().stream()
+                    .peek(seatReq -> normalizeSeatType(seatReq.getSeatType()))
+                    .filter(seatReq -> !"EMPTY".equalsIgnoreCase(seatReq.getSeatType()))
+                    .map(seatReq -> {
+                        Seat seat = new Seat();
+                        seat.setRoom(room);
+                        seat.setRowName(seatReq.getRowLabel());
+                        seat.setSeatLabel(seatReq.getColumnLabel());
+                        seat.setSeatType(normalizeSeatType(seatReq.getSeatType()));
+                        seat.setGridRow(toDatabaseGridIndex(seatReq.getRowIndex()));
+                        seat.setGridColumn(toDatabaseGridIndex(seatReq.getColumnIndex()));
+                        return seat;
+                    }).collect(Collectors.toList());
 
             room.getSeats().addAll(newSeats);
         }
@@ -244,11 +400,25 @@ public class RoomServiceImpl implements RoomService{
     }
 
     @Override
+    @Transactional
     public RoomResponseDTO deleteRoom(String roomId) {
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Room", "id", roomId));
+
+        // Khi phòng dừng hoạt động, hủy toàn bộ suất chiếu tương lai của phòng.
+        int cancelledCount = showtimeRepository.cancelFutureScheduledShowtimesByRoomId(
+                roomId,
+                LocalDateTime.now(),
+                ShowtimeStatus.SCHEDULED,
+                ShowtimeStatus.CANCELLED
+        );
+
+        System.out.println(">>> Đã hủy " + cancelledCount + " suất chiếu tương lai của phòng " + roomId);
+
         room.setIsActive(false);
+
         Room savedRoom = roomRepository.save(room);
+
         RoomResponseDTO dto = modelMapper.map(savedRoom, RoomResponseDTO.class);
         dto.setCinemaName(savedRoom.getCinema().getName());
 
@@ -265,6 +435,12 @@ public class RoomServiceImpl implements RoomService{
     @Override
     @Transactional
     public List<SeatResponseDTO> updateSeatTypes(SeatTypeUpdateRequestDTO request) {
+        String seatType = normalizeSeatType(request.getSeatType());
+
+        if ("EMPTY".equalsIgnoreCase(seatType)) {
+            throw new APIException("Không thể cập nhật ghế thật thành EMPTY bằng API này. Hãy dùng API cập nhật sơ đồ phòng!");
+        }
+
         List<Seat> seats = seatRepository.findAllById(request.getSeatIds());
 
         if (seats.isEmpty()) {
@@ -272,12 +448,36 @@ public class RoomServiceImpl implements RoomService{
         }
 
         for (Seat seat : seats) {
-            seat.setSeatType(request.getSeatType());
+            if (!Boolean.TRUE.equals(seat.getRoom().getIsActive())) {
+                throw new APIException("Không thể cập nhật ghế thuộc phòng chiếu đã dừng hoạt động!");
+            }
+
+            seat.setSeatType(seatType);
         }
+
         List<Seat> updatedSeats = seatRepository.saveAll(seats);
 
         return updatedSeats.stream()
                 .map(seat -> modelMapper.map(seat, SeatResponseDTO.class))
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional
+    public RoomResponseDTO reopenRoom(String roomId) {
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ResourceNotFoundException("Room", "id", roomId));
+
+        if (!Boolean.TRUE.equals(room.getCinema().getIsActive())) {
+            throw new APIException("Không thể mở lại phòng vì rạp đang dừng hoạt động!");
+        }
+
+        room.setIsActive(true);
+
+        Room savedRoom = roomRepository.save(room);
+
+        RoomResponseDTO dto = modelMapper.map(savedRoom, RoomResponseDTO.class);
+        dto.setCinemaName(savedRoom.getCinema().getName());
+        return dto;
     }
 }

@@ -1,0 +1,36 @@
+server:
+  port: ${PAYMENT_SERVICE_PORT:8084}
+
+spring:
+  application:
+    name: payment-service
+
+  datasource:
+    url: ${PAYMENT_DB_URL}
+    username: ${PAYMENT_DB_USERNAME}
+    password: ${PAYMENT_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: ${JPA_SHOW_SQL:true}
+    properties:
+      hibernate:
+        format-sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+
+momo:
+  partner-code: ${MOMO_PARTNER_CODE}
+  access-key: ${MOMO_ACCESS_KEY}
+  secret-key: ${MOMO_SECRET_KEY}
+  endpoint: ${MOMO_ENDPOINT:https://test-payment.momo.vn/v2/gateway/api/create}
+  return-url: ${MOMO_RETURN_URL:http://localhost:3000/payment-result}
+  notify-url: ${MOMO_NOTIFY_URL}
+
+app:
+  gateway-secret: ${GATEWAY_SECRET}
+  internal-secret: ${INTERNAL_SECRET}
+  payment-retry:
+    fixed-delay-ms: ${PAYMENT_RETRY_FIXED_DELAY_MS:60000}
+    max-retry-count: ${PAYMENT_RETRY_MAX_COUNT:10}

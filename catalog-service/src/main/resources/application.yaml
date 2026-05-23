@@ -1,5 +1,5 @@
 server:
-  port: 8081
+  port: ${CATALOG_SERVICE_PORT:8081}
 
 spring:
   application:
@@ -9,24 +9,27 @@ spring:
     multipart:
       max-file-size: 100MB
       max-request-size: 100MB
+
   datasource:
-    url: jdbc:mysql://localhost:3307/catalog_db?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
-    username: root
-    password: 1234
+    url: ${CATALOG_DB_URL}
+    username: ${CATALOG_DB_USERNAME}
+    password: ${CATALOG_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
     hibernate:
       ddl-auto: update
-
-    show-sql: true
-
+    show-sql: ${JPA_SHOW_SQL:true}
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQL8Dialect
         format-sql: true
 
 cloudinary:
-  cloud-name: dkmpcvjki
-  api-key: 897437728973568
-  api-secret: lEpWmAibAJeQDWbwz1EPXveXcEs
+  cloud-name: ${CLOUDINARY_CLOUD_NAME}
+  api-key: ${CLOUDINARY_API_KEY}
+  api-secret: ${CLOUDINARY_API_SECRET}
+
+app:
+  gateway-secret: ${GATEWAY_SECRET}
+  internal-secret: ${INTERNAL_SECRET}

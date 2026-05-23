@@ -13,4 +13,7 @@ public interface BookingService {
     BookingResponseDTO confirmPayment(String userId, String bookingId);
     BookingResponseDTO cancelBooking(String userId, String bookingId);
     BookingResponseDTO getBookingDetails(String userId, String bookingId);
+    Double getSnackPriceFromCatalog(String snackId);
+    Double getSeatPriceFromCatalog(String showtimeId, String seatId);
+    boolean hasActiveBookingForShowtimes(List<String> showtimeIds);
 }

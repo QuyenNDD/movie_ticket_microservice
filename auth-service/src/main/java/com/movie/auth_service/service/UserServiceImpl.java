@@ -51,9 +51,7 @@ public class UserServiceImpl implements UserService{
         user.setUserName(registerRequest.getUserName());
         user.setEmail(registerRequest.getEmail());
         user.setPassword(passwordEncoder.encode(registerRequest.getPassword())); // BĂM MẬT KHẨU
-        if (registerRequest.getRole() != null) {
-            user.setRole(registerRequest.getRole().toUpperCase());
-        }
+        user.setRole("USER");
 
         userRepository.save(user);
         return "Đăng ký người dùng thành công!";

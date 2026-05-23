@@ -15,4 +15,5 @@ public interface RoomService {
     RoomResponseDTO deleteRoom(String roomId);
     List<SeatResponseDTO> getSeatsByRoomId(String roomId);
     List<SeatResponseDTO> updateSeatTypes(SeatTypeUpdateRequestDTO request);
+    RoomResponseDTO reopenRoom(String roomId);
 }

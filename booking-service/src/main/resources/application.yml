@@ -1,5 +1,5 @@
 server:
-  port: 8082
+  port: ${BOOKING_SERVICE_PORT:8082}
 
 spring:
   application:
@@ -7,20 +7,24 @@ spring:
 
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
   datasource:
-    url: jdbc:mysql://localhost:3307/booking_db?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8&allowPublicKeyRetrieval=true
-    username: root
-    password: 1234
+    url: ${BOOKING_DB_URL}
+    username: ${BOOKING_DB_USERNAME}
+    password: ${BOOKING_DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: ${JPA_SHOW_SQL:true}
     properties:
       hibernate:
         format-sql: true
         dialect: org.hibernate.dialect.MySQLDialect
+
+app:
+  gateway-secret: ${GATEWAY_SECRET}
+  internal-secret: ${INTERNAL_SECRET}
