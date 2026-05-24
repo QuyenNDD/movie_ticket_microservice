@@ -62,7 +62,12 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable) // Tắt CSRF vì chúng ta dùng JWT (Stateless)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // Không lưu Session trên Server
                 .authorizeHttpRequests(auth ->
-                        auth.requestMatchers("/api/v1/auth/register", "/api/v1/auth/login", "/api/v1/auth/refresh").permitAll() // Thả rông các API này
+                        auth.requestMatchers(
+                                        "/api/v1/auth/register",
+                                        "/api/v1/auth/login",
+                                        "/api/v1/auth/refresh",
+                                        "/api/v1/auth/internal/users/**"
+                                ).permitAll()
                                 .anyRequest().authenticated() // Bất kỳ API nào khác đều phải có JWT
                 );
 

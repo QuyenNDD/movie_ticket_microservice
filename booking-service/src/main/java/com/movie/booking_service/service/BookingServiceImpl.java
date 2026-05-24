@@ -47,6 +47,9 @@ public class BookingServiceImpl implements BookingService{
     @Value("${app.internal-secret}")
     private String internalSecret;
 
+    @Value("${app.catalog-service-url:http://localhost:8081/api/v1/catalog}")
+    private String catalogServiceUrl;
+
     @Transactional
     public BookingResponseDTO holdSeats(String userId, BookingRequestDTO request) {
         String showtimeId = request.getShowtimeId();
@@ -428,21 +431,24 @@ public class BookingServiceImpl implements BookingService{
             throw new RuntimeException("Lỗi bảo mật: Không có quyền truy cập!");
         }
 
-        // Tính toán số giây còn lại (Thời hạn là 5 phút = 300 giây)
         long elapsedSeconds = Duration.between(booking.getBookingTime(), LocalDateTime.now()).getSeconds();
         long remainingSeconds = SEAT_HOLD_TTL_SECONDS - elapsedSeconds;
 
-        // Nếu quá 5 phút mà Cron Job chưa kịp quét, ta chủ động ép về 0 giây
-        if (remainingSeconds < 0 || "CANCELLED".equals(booking.getStatus())) {
+        if (remainingSeconds < 0 || "CANCELLED".equalsIgnoreCase(booking.getStatus())) {
             remainingSeconds = 0;
         }
+
+        List<BookingResponseDTO.SeatItem> seatItems = buildBookingSeatItems(booking);
+        List<BookingResponseDTO.SnackItem> snackItems = buildBookingSnackItems(booking);
 
         return BookingResponseDTO.builder()
                 .bookingId(booking.getId())
                 .status(booking.getStatus())
                 .totalPrice(booking.getTotalPrice())
-                .expiresInSeconds(remainingSeconds) // Trả về số giây còn lại cho FE
+                .expiresInSeconds(remainingSeconds)
                 .message("Lấy thông tin hóa đơn thành công.")
+                .seats(seatItems)
+                .snacks(snackItems)
                 .build();
     }
 
@@ -701,5 +707,123 @@ public class BookingServiceImpl implements BookingService{
         String label = seat.getSeatLabel() == null ? "" : seat.getSeatLabel();
 
         return row + label;
+    }
+
+    private List<BookingResponseDTO.SeatItem> buildBookingSeatItems(Booking booking) {
+        Map<String, String> seatNameMap = getSeatNameMapByShowtimeId(booking.getShowtimeId());
+
+        List<BookingResponseDTO.SeatItem> result = new ArrayList<>();
+
+        if (booking.getBookingSeats() == null || booking.getBookingSeats().isEmpty()) {
+            return result;
+        }
+
+        for (BookingSeat bookingSeat : booking.getBookingSeats()) {
+            String seatId = bookingSeat.getSeatId();
+            String seatName = seatNameMap.getOrDefault(seatId, seatId);
+
+            result.add(
+                    BookingResponseDTO.SeatItem.builder()
+                            .seatId(seatId)
+                            .seatName(seatName)
+                            .price(toLongMoney(bookingSeat.getPriceAtPurchase()))
+                            .build()
+            );
+        }
+
+        return result;
+    }
+
+    private List<BookingResponseDTO.SnackItem> buildBookingSnackItems(Booking booking) {
+        List<BookingResponseDTO.SnackItem> result = new ArrayList<>();
+
+        if (booking.getBookingSnacks() == null || booking.getBookingSnacks().isEmpty()) {
+            return result;
+        }
+
+        for (BookingSnack bookingSnack : booking.getBookingSnacks()) {
+            String snackId = bookingSnack.getSnackId();
+            String snackName = getSnackNameFromCatalog(snackId);
+
+            result.add(
+                    BookingResponseDTO.SnackItem.builder()
+                            .snackId(snackId)
+                            .snackName(snackName)
+                            .quantity(bookingSnack.getQuantity())
+                            .price(toLongMoney(bookingSnack.getPriceAtPurchase()))
+                            .build()
+            );
+        }
+
+        return result;
+    }
+
+    private Map<String, String> getSeatNameMapByShowtimeId(String showtimeId) {
+        ShowtimeResponseDTO showtimeInfo = getShowtimeInfoOnly(showtimeId);
+
+        if (showtimeInfo == null || showtimeInfo.getRoomId() == null) {
+            return new HashMap<>();
+        }
+
+        String url = catalogServiceUrl + "/rooms/internal/" + showtimeInfo.getRoomId() + "/seats";
+
+        SeatStatusResponseDTO[] seats = internalGet(url, SeatStatusResponseDTO[].class);
+
+        Map<String, String> result = new HashMap<>();
+
+        if (seats == null || seats.length == 0) {
+            return result;
+        }
+
+        for (SeatStatusResponseDTO seat : seats) {
+            String seatName = buildSeatName(seat);
+            result.put(seat.getId(), seatName);
+        }
+
+        return result;
+    }
+
+    private ShowtimeResponseDTO getShowtimeInfoOnly(String showtimeId) {
+        String url = catalogServiceUrl + "/showtimes/" + showtimeId;
+
+        ShowtimeResponseDTO showtimeInfo = restTemplate.getForObject(url, ShowtimeResponseDTO.class);
+
+        if (showtimeInfo == null) {
+            throw new RuntimeException("Không lấy được thông tin suất chiếu từ Catalog!");
+        }
+
+        return showtimeInfo;
+    }
+
+    private String getSnackNameFromCatalog(String snackId) {
+        try {
+            String url = catalogServiceUrl + "/snacks/" + snackId;
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    null,
+                    Map.class
+            );
+
+            Map<String, Object> body = response.getBody();
+
+            if (body == null || body.get("name") == null) {
+                return snackId;
+            }
+
+            return body.get("name").toString();
+
+        } catch (Exception e) {
+            return snackId;
+        }
+    }
+
+    private Long toLongMoney(Double value) {
+        if (value == null) {
+            return 0L;
+        }
+
+        return Math.round(value);
     }
 }

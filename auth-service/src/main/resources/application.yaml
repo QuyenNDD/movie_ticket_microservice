@@ -25,3 +25,6 @@ spring:
       hibernate:
         format-sql: true
         dialect: org.hibernate.dialect.MySQLDialect
+
+app:
+  internal-secret: ${INTERNAL_SECRET:dev-internal-secret}

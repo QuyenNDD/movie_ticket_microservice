@@ -17,9 +17,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 @Service
 public class MomoServiceImpl implements MomoService {
@@ -49,6 +47,12 @@ public class MomoServiceImpl implements MomoService {
     private int maxRetryCount;
 
     private static final String BOOKING_SERVICE_BASE_URL = "http://localhost:8082/api/v1/booking";
+
+    @Value("${app.auth-service-url:http://localhost:8083}")
+    private String authServiceUrl;
+
+    @Value("${app.notification-service-url:http://localhost:8085}")
+    private String notificationServiceUrl;
 
     @Autowired
     private PaymentTransactionRepository paymentTransactionRepository;
@@ -219,8 +223,14 @@ public class MomoServiceImpl implements MomoService {
         if ("PAID".equalsIgnoreCase(bookingStatus)) {
             payment.setStatus(PaymentStatus.SUCCESS);
             payment.setTransId(dto.getTransId());
-            payment.setPaidAt(LocalDateTime.now());
+
+            if (payment.getPaidAt() == null) {
+                payment.setPaidAt(LocalDateTime.now());
+            }
+
             paymentTransactionRepository.save(payment);
+
+            sendBookingPaidEmailIfNeeded(payment);
 
             System.out.println(">>> Booking đã PAID trước đó. Đánh dấu payment SUCCESS và bỏ qua confirm.");
             return;
@@ -375,7 +385,14 @@ public class MomoServiceImpl implements MomoService {
             payment.setStatus(PaymentStatus.SUCCESS);
             payment.setLastError(null);
             payment.setNextRetryAt(null);
+
+            if (payment.getPaidAt() == null) {
+                payment.setPaidAt(LocalDateTime.now());
+            }
+
             paymentTransactionRepository.save(payment);
+
+            sendBookingPaidEmailIfNeeded(payment);
 
             System.out.println(">>> [THÀNH CÔNG] Đã confirm booking "
                     + payment.getBookingId()
@@ -421,5 +438,156 @@ public class MomoServiceImpl implements MomoService {
         }
 
         return 10;
+    }
+
+    private String getUserEmail(String userId) {
+        RestTemplate restTemplate = new RestTemplate();
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Internal-Secret", internalSecret);
+
+        HttpEntity<String> entity = new HttpEntity<>(null, headers);
+
+        ResponseEntity<Map> response = restTemplate.exchange(
+                authServiceUrl + "/api/v1/auth/internal/users/" + userId,
+                HttpMethod.GET,
+                entity,
+                Map.class
+        );
+
+        Map<String, Object> body = response.getBody();
+
+        if (body == null || body.get("email") == null) {
+            throw new RuntimeException("Không lấy được email user từ auth-service!");
+        }
+
+        return body.get("email").toString();
+    }
+
+    private void sendBookingPaidEmailIfNeeded(PaymentTransaction payment) {
+        if (payment == null) {
+            return;
+        }
+
+        if (Boolean.TRUE.equals(payment.getEmailSent())) {
+            return;
+        }
+
+        try {
+            String email = getUserEmail(payment.getUserId());
+
+            Map<String, Object> bookingDetail = getBookingDetail(
+                    payment.getUserId(),
+                    payment.getBookingId()
+            );
+
+            Map<String, Object> requestBody = new HashMap<>();
+            requestBody.put("toEmail", email);
+            requestBody.put("bookingId", payment.getBookingId());
+            requestBody.put("amount", payment.getAmount());
+            requestBody.put(
+                    "paidAt",
+                    payment.getPaidAt() == null
+                            ? LocalDateTime.now().toString()
+                            : payment.getPaidAt().toString()
+            );
+
+            requestBody.put("seats", buildEmailSeatItems(bookingDetail));
+            requestBody.put("snacks", buildEmailSnackItems(bookingDetail));
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("X-Internal-Secret", internalSecret);
+
+            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
+
+            RestTemplate restTemplate = new RestTemplate();
+
+            restTemplate.exchange(
+                    notificationServiceUrl + "/api/v1/notifications/internal/booking-paid",
+                    HttpMethod.POST,
+                    entity,
+                    String.class
+            );
+
+            payment.setEmailSent(true);
+            payment.setEmailSentAt(LocalDateTime.now());
+            payment.setEmailError(null);
+            paymentTransactionRepository.save(payment);
+
+            System.out.println(">>> Đã gửi email xác nhận thanh toán cho user " + payment.getUserId());
+
+        } catch (Exception e) {
+            payment.setEmailSent(false);
+            payment.setEmailError(e.getMessage());
+            paymentTransactionRepository.save(payment);
+
+            System.err.println(">>> Gửi email thanh toán thất bại. bookingId="
+                    + payment.getBookingId()
+                    + ", error="
+                    + e.getMessage());
+        }
+    }
+
+    private List<Map<String, Object>> buildEmailSeatItems(Map<String, Object> bookingDetail) {
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        Object seatsObj = bookingDetail.get("seats");
+
+        if (!(seatsObj instanceof List<?> seats)) {
+            return result;
+        }
+
+        for (Object item : seats) {
+            if (!(item instanceof Map<?, ?> seatMap)) {
+                continue;
+            }
+
+            Map<String, Object> seat = new HashMap<>();
+
+            Object seatId = seatMap.get("seatId");
+            Object seatName = seatMap.get("seatName");
+            Object price = seatMap.get("priceAtPurchase");
+
+            seat.put("seatId", seatId == null ? "" : seatId.toString());
+            seat.put("seatName", seatName == null ? seat.get("seatId") : seatName.toString());
+            seat.put("price", price == null ? 0L : new BigDecimal(price.toString()).longValue());
+
+            result.add(seat);
+        }
+
+        return result;
+    }
+
+    private List<Map<String, Object>> buildEmailSnackItems(Map<String, Object> bookingDetail) {
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        Object snacksObj = bookingDetail.get("snacks");
+
+        if (!(snacksObj instanceof List<?> snacks)) {
+            return result;
+        }
+
+        for (Object item : snacks) {
+            if (!(item instanceof Map<?, ?> snackMap)) {
+                continue;
+            }
+
+            Map<String, Object> snack = new HashMap<>();
+
+            Object snackId = snackMap.get("snackId");
+            Object snackName = snackMap.get("snackName");
+            Object quantity = snackMap.get("quantity");
+            Object price = snackMap.get("priceAtPurchase");
+
+            snack.put("snackId", snackId == null ? "" : snackId.toString());
+            snack.put("snackName", snackName == null ? snack.get("snackId") : snackName.toString());
+            snack.put("quantity", quantity == null ? 0 : Integer.parseInt(quantity.toString()));
+            snack.put("price", price == null ? 0L : new BigDecimal(price.toString()).longValue());
+
+            result.add(snack);
+        }
+
+        return result;
     }
 }

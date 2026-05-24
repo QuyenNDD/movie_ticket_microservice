@@ -1,15 +1,11 @@
 package com.movie.booking_service.dto;
 
-import com.movie.booking_service.entity.BookingSeat;
-import com.movie.booking_service.entity.BookingSnack;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -21,4 +17,31 @@ public class BookingResponseDTO {
     private String message;
     private Double totalPrice;
     private long expiresInSeconds;
+
+    // Thêm để gửi mail hiển thị tên ghế
+    private List<SeatItem> seats;
+
+    // Thêm để gửi mail hiển thị tên snack
+    private List<SnackItem> snacks;
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SeatItem {
+        private String seatId;
+        private String seatName; // Ví dụ: A1, A2
+        private Long price;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class SnackItem {
+        private String snackId;
+        private String snackName; // Ví dụ: Bắp rang bơ, Coca
+        private Integer quantity;
+        private Long price; // đơn giá lúc mua
+    }
 }

@@ -4,6 +4,7 @@ import com.movie.auth_service.dto.request.LoginRequestDTO;
 import com.movie.auth_service.dto.request.RegisterRequestDTO;
 import com.movie.auth_service.dto.request.TokenRefreshRequestDTO;
 import com.movie.auth_service.dto.response.JwtResponseDTO;
+import com.movie.auth_service.dto.response.UserInternalResponseDTO;
 import com.movie.auth_service.dto.response.UserResponseDTO;
 import com.movie.auth_service.entity.User;
 import com.movie.auth_service.jwt.JwtUtils;
@@ -107,5 +108,18 @@ public class UserServiceImpl implements UserService{
                 .orElseThrow(() -> new UsernameNotFoundException("Không tìm thấy thông tin người dùng"));
 
         return modelMapper.map(user, UserResponseDTO.class);
+    }
+
+    @Override
+    public UserInternalResponseDTO getInternalUserById(String userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy user với id: " + userId));
+
+        return UserInternalResponseDTO.builder()
+                .id(user.getId())
+                .userName(user.getUserName())
+                .email(user.getEmail())
+                .role(user.getRole())
+                .build();
     }
 }

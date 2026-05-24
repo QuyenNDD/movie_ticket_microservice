@@ -4,6 +4,7 @@ import com.movie.auth_service.dto.request.LoginRequestDTO;
 import com.movie.auth_service.dto.request.RegisterRequestDTO;
 import com.movie.auth_service.dto.request.TokenRefreshRequestDTO;
 import com.movie.auth_service.dto.response.JwtResponseDTO;
+import com.movie.auth_service.dto.response.UserInternalResponseDTO;
 import com.movie.auth_service.dto.response.UserResponseDTO;
 
 public interface UserService {
@@ -11,4 +12,5 @@ public interface UserService {
     JwtResponseDTO authenticateUser(LoginRequestDTO loginRequest);
     JwtResponseDTO refreshAccessToken(TokenRefreshRequestDTO refreshRequest);
     UserResponseDTO getMyProfile();
+    UserInternalResponseDTO getInternalUserById(String userId);
 }

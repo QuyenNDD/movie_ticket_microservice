@@ -31,6 +31,8 @@ momo:
 app:
   gateway-secret: ${GATEWAY_SECRET}
   internal-secret: ${INTERNAL_SECRET}
+  auth-service-url: ${AUTH_SERVICE_URL:http://localhost:8083}
+  notification-service-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8085}
   payment-retry:
     fixed-delay-ms: ${PAYMENT_RETRY_FIXED_DELAY_MS:60000}
     max-retry-count: ${PAYMENT_RETRY_MAX_COUNT:10}

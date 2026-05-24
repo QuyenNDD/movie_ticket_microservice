@@ -4,10 +4,12 @@ import com.movie.auth_service.dto.request.LoginRequestDTO;
 import com.movie.auth_service.dto.request.RegisterRequestDTO;
 import com.movie.auth_service.dto.request.TokenRefreshRequestDTO;
 import com.movie.auth_service.dto.response.JwtResponseDTO;
+import com.movie.auth_service.dto.response.UserInternalResponseDTO;
 import com.movie.auth_service.dto.response.UserResponseDTO;
 import com.movie.auth_service.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +19,9 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
     @Autowired
     UserService userService;
+
+    @Value("${app.internal-secret:dev-internal-secret}")
+    private String internalSecret;
 
     // 1. ĐĂNG KÝ (Giữ nguyên của bạn, thêm @Valid)
     @PostMapping("/register")
@@ -44,5 +49,18 @@ public class AuthController {
     public ResponseEntity<UserResponseDTO> getMyProfile() {
         UserResponseDTO response = userService.getMyProfile();
         return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    @GetMapping("/internal/users/{userId}")
+    public ResponseEntity<UserInternalResponseDTO> getInternalUserById(
+            @RequestHeader("X-Internal-Secret") String internalSecretHeader,
+            @PathVariable String userId
+    ) {
+        if (!internalSecret.equals(internalSecretHeader)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        UserInternalResponseDTO response = userService.getInternalUserById(userId);
+        return ResponseEntity.ok(response);
     }
 }

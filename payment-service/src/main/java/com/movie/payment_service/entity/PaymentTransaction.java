@@ -57,6 +57,13 @@ public class PaymentTransaction {
 
     private LocalDateTime nextRetryAt;
 
+    private Boolean emailSent = false;
+
+    private LocalDateTime emailSentAt;
+
+    @Column(length = 2000)
+    private String emailError;
+
     @Column(length = 2000)
     private String lastError;
 
@@ -75,6 +82,10 @@ public class PaymentTransaction {
         if (retryCount == null) {
             retryCount = 0;
         }
+
+        if (emailSent == null) {
+            emailSent = false;
+        }
     }
 
     @PreUpdate
@@ -83,6 +94,10 @@ public class PaymentTransaction {
 
         if (retryCount == null) {
             retryCount = 0;
+        }
+
+        if (emailSent == null) {
+            emailSent = false;
         }
     }
 }
