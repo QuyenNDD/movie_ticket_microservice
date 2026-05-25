@@ -263,6 +263,12 @@ public class RoomServiceImpl implements RoomService{
         RoomResponseDTO response = new RoomResponseDTO();
         response.setId(room.getId());
         response.setName(room.getName());
+        response.setCinemaId(room.getCinema().getId());
+        response.setCinemaName(room.getCinema().getName());
+        response.setRowCount(room.getRowCount());
+        response.setColumnCount(room.getColumnCount());
+        response.setTotalSeats(room.getTotalSeats());
+        response.setIsActive(room.getIsActive());
         if (room.getSeats() != null && !room.getSeats().isEmpty()) {
 
             // 1. Nhóm các ghế lại theo tọa độ vật lý trục Y (gridRow)

@@ -35,6 +35,12 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
 
+            System.out.println("========== AUTHENTICATION FILTER RUNNING ==========");
+            System.out.println("Method: " + request.getMethod());
+            System.out.println("Path: " + request.getURI().getPath());
+            System.out.println("Has Authorization: " + request.getHeaders().containsKey("Authorization"));
+            System.out.println("===================================================");
+
             if (request.getMethod() == HttpMethod.OPTIONS) {
                 return chain.filter(exchange);
             }
@@ -63,11 +69,22 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
             }
 
             ServerHttpRequest mutatedRequest = request.mutate()
+                    .headers(headers -> {
+                        // Xóa header client tự gửi để tránh giả mạo quyền
+                        headers.remove("X-User-Id");
+                        headers.remove("X-User-Role");
+                        headers.remove("X-Gateway-Secret");
+                    })
                     .header("X-User-Id", userId)
                     .header("X-User-Role", role)
                     .header("X-Gateway-Secret", gatewaySecret)
                     .build();
 
+            System.out.println("========== API GATEWAY FORWARD HEADERS ==========");
+            System.out.println("Forward X-User-Id: " + mutatedRequest.getHeaders().getFirst("X-User-Id"));
+            System.out.println("Forward X-User-Role: " + mutatedRequest.getHeaders().getFirst("X-User-Role"));
+            System.out.println("Forward X-Gateway-Secret: " + maskSecret(mutatedRequest.getHeaders().getFirst("X-Gateway-Secret")));
+            System.out.println("=================================================");
             return chain.filter(exchange.mutate().request(mutatedRequest).build());
         };
     }
@@ -106,5 +123,17 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
 
     private boolean isAdmin(String role) {
         return role != null && "ADMIN".equalsIgnoreCase(role);
+    }
+
+    private String maskSecret(String value) {
+        if (value == null || value.isBlank()) {
+            return "NULL";
+        }
+
+        if (value.length() <= 8) {
+            return "****";
+        }
+
+        return value.substring(0, 4) + "****" + value.substring(value.length() - 4);
     }
 }

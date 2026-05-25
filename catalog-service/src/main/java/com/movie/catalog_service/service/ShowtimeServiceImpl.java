@@ -98,9 +98,13 @@ public class ShowtimeServiceImpl implements ShowtimeService{
     // Lấy theo Rạp
     @Override
     public List<ShowtimeResponseDTO> getShowtimesByCinemaAndDate(String cinemaId, LocalDateTime date) {
+        LocalDateTime startOfDay = date.toLocalDate().atStartOfDay();
+        LocalDateTime endOfDay = startOfDay.plusDays(1);
+
         List<Showtime> showtimes = showtimeRepository.findShowtimesByCinemaAndDate(
                 cinemaId,
-                date,
+                startOfDay,
+                endOfDay,
                 ShowtimeStatus.SCHEDULED
         );
         return showtimes.stream()
@@ -110,9 +114,13 @@ public class ShowtimeServiceImpl implements ShowtimeService{
 
     @Override
     public List<ShowtimeResponseDTO> getShowtimesByMovieAndDate(String movieId, LocalDateTime date) {
+        LocalDateTime startOfDay = date.toLocalDate().atStartOfDay();
+        LocalDateTime endOfDay = startOfDay.plusDays(1);
+
         List<Showtime> showtimes = showtimeRepository.findShowtimesByMovieAndDate(
                 movieId,
-                date,
+                startOfDay,
+                endOfDay,
                 ShowtimeStatus.SCHEDULED
         );
         return showtimes.stream()

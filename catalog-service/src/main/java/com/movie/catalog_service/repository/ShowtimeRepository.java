@@ -33,11 +33,13 @@ public interface ShowtimeRepository extends JpaRepository<Showtime, String> {
             "AND s.movie.status = 'ACTIVE' " +
             "AND s.room.isActive = true " +
             "AND s.room.cinema.isActive = true " +
-            "AND DATE(s.startTime) = DATE(:date) " +
+            "AND s.startTime >= :startOfDay " +
+            "AND s.startTime < :endOfDay " +
             "ORDER BY s.startTime ASC")
     List<Showtime> findShowtimesByCinemaAndDate(
             @Param("cinemaId") String cinemaId,
-            @Param("date") LocalDateTime date,
+            @Param("startOfDay") LocalDateTime startOfDay,
+            @Param("endOfDay") LocalDateTime endOfDay,
             @Param("status") ShowtimeStatus status
     );
 
@@ -47,11 +49,13 @@ public interface ShowtimeRepository extends JpaRepository<Showtime, String> {
             "AND s.movie.status = 'ACTIVE' " +
             "AND s.room.isActive = true " +
             "AND s.room.cinema.isActive = true " +
-            "AND DATE(s.startTime) = DATE(:date) " +
+            "AND s.startTime >= :startOfDay " +
+            "AND s.startTime < :endOfDay " +
             "ORDER BY s.room.cinema.name ASC, s.startTime ASC")
     List<Showtime> findShowtimesByMovieAndDate(
             @Param("movieId") String movieId,
-            @Param("date") LocalDateTime date,
+            @Param("startOfDay") LocalDateTime startOfDay,
+            @Param("endOfDay") LocalDateTime endOfDay,
             @Param("status") ShowtimeStatus status
     );
 

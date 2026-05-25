@@ -13,16 +13,33 @@ spring:
           predicates:
             - Path=/api/v1/auth/**
 
-        - id: catalog-service-public-movies
+        - id: catalog-service-public-get
           uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
           predicates:
             - Path=/api/v1/catalog/movies/**,/api/v1/catalog/cinemas/**,/api/v1/catalog/showtimes/**
             - Method=GET
 
-        - id: catalog-service-protected
+        - id: catalog-service-protected-get
+          uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
+          predicates:
+            - Path=/api/v1/catalog/rooms/**,/api/v1/catalog/snacks/**
+            - Method=GET
+          filters:
+            - AuthenticationFilter
+
+        - id: catalog-service-protected-write
           uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
           predicates:
             - Path=/api/v1/catalog/**
+            - Method=POST,PUT,PATCH,DELETE
+          filters:
+            - AuthenticationFilter
+
+        - id: catalog-service-user-protected
+          uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
+          predicates:
+            - Path=/api/v1/catalog/**
+            - Method=POST,PUT,PATCH,DELETE
           filters:
             - AuthenticationFilter
 
@@ -42,9 +59,9 @@ spring:
 
   movie:
     jwt:
-      secret: ${JWT_SECRET}
+      secret: ${JWT_SECRET:VmVyeVNlY3JldEtleUZvckp3dEF1dGhlbnRpY2F0aW9uU3ByaW5nQm9vdEFwcGxpY2F0aW9u}
       expirationMs: ${JWT_EXPIRATION_MS:86400000}
       refresh-expiration: ${JWT_REFRESH_EXPIRATION_MS:604800000}
 
 app:
-  gateway-secret: ${GATEWAY_SECRET}
+  gateway-secret: ${GATEWAY_SECRET:a3f8c9e1d2b5f6a0b9d8e4f7c3a2b1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b7a2}
