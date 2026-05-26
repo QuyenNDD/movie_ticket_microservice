@@ -79,6 +79,8 @@ public class BookingServiceImpl implements BookingService{
             throw new RuntimeException("Danh sách ghế có ghế bị trùng!");
         }
 
+        validateDuplicateSnacks(request);
+
         // 4. Check DB: ghế đã thanh toán chưa
         if (bookingRepository.checkIfSeatsArePaid(showtimeId, seatIds)) {
             throw new RuntimeException("Một trong các ghế bạn chọn đã được thanh toán!");
@@ -89,7 +91,7 @@ public class BookingServiceImpl implements BookingService{
         // - Check ghế PAID/LOCKED/MAINTENANCE
         // - Rule COUPLE
         // - Không để lại ghế trống lẻ cô lập
-        validateSeatSelectionRules(showtimeId, showtimeInfo.getRoomId(), seatIds);
+        validateSeatSelectionRules(showtimeId, showtimeInfo.getRoomId(), seatIds, false);
 
         List<String> lockedKeys = new ArrayList<>();
 
@@ -111,6 +113,8 @@ public class BookingServiceImpl implements BookingService{
 
                 lockedKeys.add(redisKey);
             }
+
+            validateSeatSelectionRules(showtimeId, showtimeInfo.getRoomId(), seatIds, true);
 
             // 7. Tạo booking
             Booking booking = modelMapper.map(request, Booking.class);
@@ -186,9 +190,8 @@ public class BookingServiceImpl implements BookingService{
     }
 
     private ShowtimeResponseDTO getAndValidateShowtimeForBooking(String showtimeId) {
-        String showtimeInfoUrl = "http://localhost:8080/api/v1/catalog/showtimes/" + showtimeId;
-        ShowtimeResponseDTO showtimeInfo = restTemplate.getForObject(showtimeInfoUrl, ShowtimeResponseDTO.class);
-
+        String showtimeInfoUrl = catalogServiceUrl + "/showtimes/" + showtimeId;
+        ShowtimeResponseDTO showtimeInfo = internalGet(showtimeInfoUrl, ShowtimeResponseDTO.class);
         if (showtimeInfo == null) {
             throw new RuntimeException("Không lấy được thông tin suất chiếu từ Catalog!");
         }
@@ -233,7 +236,7 @@ public class BookingServiceImpl implements BookingService{
         // ==========================================
         // 2. LẤY BẢN ĐỒ GHẾ GỐC TỪ CATALOG
         // ==========================================
-        String catalogUrl = "http://localhost:8080/api/v1/catalog/rooms/internal/" + roomId + "/seats";
+        String catalogUrl = catalogServiceUrl + "/rooms/internal/" + roomId + "/seats";
         SeatStatusResponseDTO[] rawSeatsArray = internalGet(catalogUrl, SeatStatusResponseDTO[].class);
 
         if (rawSeatsArray == null || rawSeatsArray.length == 0) {
@@ -307,6 +310,7 @@ public class BookingServiceImpl implements BookingService{
                 dto.setStatus(s.getStatus());
                 dto.setGridRow(s.getGridRow()); // Vẫn trả về để FE làm CSS Grid
                 dto.setGridColumn(s.getGridColumn());
+                dto.setPrice(getSeatPriceForSeatMap(showtimeId, s));
                 return dto;
             }).collect(Collectors.toList());
 
@@ -324,6 +328,23 @@ public class BookingServiceImpl implements BookingService{
         finalResponse.setSeatMatrix(matrix);
 
         return finalResponse;
+    }
+
+    private Double getSeatPriceForSeatMap(String showtimeId, SeatStatusResponseDTO seat) {
+        if (seat == null || seat.getId() == null) {
+            return 0.0;
+        }
+
+        // Ghế bảo trì thì FE không cho chọn, có thể để giá 0
+        if ("MAINTENANCE".equalsIgnoreCase(seat.getSeatType())) {
+            return 0.0;
+        }
+
+        try {
+            return getSeatPriceFromCatalog(showtimeId, seat.getId());
+        } catch (Exception e) {
+            return 0.0;
+        }
     }
 
     @Override
@@ -454,7 +475,7 @@ public class BookingServiceImpl implements BookingService{
 
     @Override
     public Double getSeatPriceFromCatalog(String showtimeId, String seatId) {
-        String url = "http://localhost:8080/api/v1/catalog/showtimes/" + showtimeId + "/seats/" + seatId + "/price";
+        String url = catalogServiceUrl + "/showtimes/" + showtimeId + "/seats/" + seatId + "/price";
 
         Double price = internalGet(url, Double.class);
 
@@ -478,7 +499,7 @@ public class BookingServiceImpl implements BookingService{
 
     @Override
     public Double getSnackPriceFromCatalog(String snackId) {
-        String url = "http://localhost:8080/api/v1/catalog/snacks/" + snackId + "/price";
+        String url = catalogServiceUrl + "/snacks/" + snackId + "/price";
         Double price = internalGet(url, Double.class);
 
         if (price == null) {
@@ -504,7 +525,7 @@ public class BookingServiceImpl implements BookingService{
         return response.getBody();
     }
 
-    private void validateSeatSelectionRules(String showtimeId, String roomId, List<String> selectedSeatIds) {
+    private void validateSeatSelectionRules(String showtimeId, String roomId, List<String> selectedSeatIds,  boolean allowSelectedLockedSeats) {
         if (roomId == null || roomId.isBlank()) {
             throw new RuntimeException("Suất chiếu thiếu thông tin phòng chiếu!");
         }
@@ -541,10 +562,13 @@ public class BookingServiceImpl implements BookingService{
                 throw new RuntimeException("Ghế " + buildSeatName(seat) + " đã được thanh toán!");
             }
 
-            if ("LOCKED".equalsIgnoreCase(seat.getStatus())) {
-                throw new RuntimeException("Ghế " + buildSeatName(seat) + " đang được người khác giữ!");
-            }
+            boolean isSelectedSeat = selectedSet.contains(seatId);
 
+            if ("LOCKED".equalsIgnoreCase(seat.getStatus())) {
+                if (!(allowSelectedLockedSeats && isSelectedSeat)) {
+                    throw new RuntimeException("Ghế " + buildSeatName(seat) + " đang được người khác giữ!");
+                }
+            }
             if ("MAINTENANCE".equalsIgnoreCase(seat.getStatus())
                     || "MAINTENANCE".equalsIgnoreCase(seat.getSeatType())) {
                 throw new RuntimeException("Ghế " + buildSeatName(seat) + " đang bảo trì, không thể đặt vé!");
@@ -569,7 +593,7 @@ public class BookingServiceImpl implements BookingService{
     }
 
     private List<SeatStatusResponseDTO> loadSeatsWithCurrentStatus(String showtimeId, String roomId) {
-        String catalogUrl = "http://localhost:8080/api/v1/catalog/rooms/internal/" + roomId + "/seats";
+        String catalogUrl = catalogServiceUrl + "/rooms/internal/" + roomId + "/seats";
         SeatStatusResponseDTO[] rawSeatsArray = internalGet(catalogUrl, SeatStatusResponseDTO[].class);
 
         if (rawSeatsArray == null || rawSeatsArray.length == 0) {
@@ -786,7 +810,7 @@ public class BookingServiceImpl implements BookingService{
     private ShowtimeResponseDTO getShowtimeInfoOnly(String showtimeId) {
         String url = catalogServiceUrl + "/showtimes/" + showtimeId;
 
-        ShowtimeResponseDTO showtimeInfo = restTemplate.getForObject(url, ShowtimeResponseDTO.class);
+        ShowtimeResponseDTO showtimeInfo = internalGet(url, ShowtimeResponseDTO.class);
 
         if (showtimeInfo == null) {
             throw new RuntimeException("Không lấy được thông tin suất chiếu từ Catalog!");
@@ -799,14 +823,7 @@ public class BookingServiceImpl implements BookingService{
         try {
             String url = catalogServiceUrl + "/snacks/" + snackId;
 
-            ResponseEntity<Map> response = restTemplate.exchange(
-                    url,
-                    HttpMethod.GET,
-                    null,
-                    Map.class
-            );
-
-            Map<String, Object> body = response.getBody();
+            Map<String, Object> body = internalGet(url, Map.class);
 
             if (body == null || body.get("name") == null) {
                 return snackId;
@@ -825,5 +842,28 @@ public class BookingServiceImpl implements BookingService{
         }
 
         return Math.round(value);
+    }
+
+    private void validateDuplicateSnacks(BookingRequestDTO request) {
+        if (request.getSnacks() == null || request.getSnacks().isEmpty()) {
+            return;
+        }
+
+        List<String> snackIds = request.getSnacks()
+                .stream()
+                .map(BookingRequestDTO.SnackRequest::getSnackId)
+                .toList();
+
+        for (String snackId : snackIds) {
+            if (snackId == null || snackId.isBlank()) {
+                throw new RuntimeException("ID snack không hợp lệ!");
+            }
+        }
+
+        long distinctSnackCount = snackIds.stream().distinct().count();
+
+        if (distinctSnackCount != snackIds.size()) {
+            throw new RuntimeException("Danh sách bắp nước có món bị trùng!");
+        }
     }
 }
