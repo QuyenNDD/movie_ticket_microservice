@@ -26,6 +26,6 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
 
 app:
-  gateway-secret: ${GATEWAY_SECRET}
-  internal-secret: ${INTERNAL_SECRET}
+  gateway-secret: ${GATEWAY_SECRET:a3f8c9e1d2b5f6a0b9d8e4f7c3a2b1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b7a2}
+  internal-secret: ${INTERNAL_SECRET:8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c}
   catalog-service-url: ${CATALOG_SERVICE_URL:http://localhost:8081/api/v1/catalog}
