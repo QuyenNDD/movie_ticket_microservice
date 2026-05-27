@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
@@ -89,7 +91,8 @@ public class MomoServiceImpl implements MomoService {
         String extraData = Base64.getEncoder()
                 .encodeToString(userId.trim().getBytes(StandardCharsets.UTF_8));
 
-        String rawSignature = "accessKey=" + accessKey
+        String rawSignature =
+                "accessKey=" + accessKey
                 + "&amount=" + amountLong
                 + "&extraData=" + extraData
                 + "&ipnUrl=" + notifyUrl
@@ -100,7 +103,13 @@ public class MomoServiceImpl implements MomoService {
                 + "&requestId=" + requestId
                 + "&requestType=captureWallet";
 
-        String signature = HmacSHA256Util.encode(secretKey, rawSignature);
+        String signature = hmacSHA256(rawSignature, secretKey);
+
+
+        System.out.println("========== MOMO RAW SIGNATURE ==========");
+        System.out.println(rawSignature);
+        System.out.println("========== MOMO SIGNATURE ==========");
+        System.out.println(signature);
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("partnerCode", partnerCode);
@@ -113,8 +122,9 @@ public class MomoServiceImpl implements MomoService {
         requestBody.put("redirectUrl", returnUrl);
         requestBody.put("ipnUrl", notifyUrl);
         requestBody.put("lang", "vi");
-        requestBody.put("extraData", extraData);
         requestBody.put("requestType", "captureWallet");
+        requestBody.put("autoCapture", true);
+        requestBody.put("extraData", extraData);
         requestBody.put("signature", signature);
 
         HttpHeaders headers = new HttpHeaders();
@@ -589,5 +599,29 @@ public class MomoServiceImpl implements MomoService {
         }
 
         return result;
+    }
+
+    private String hmacSHA256(String data, String secretKey) {
+        try {
+            Mac hmacSha256 = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secretKeySpec = new SecretKeySpec(
+                    secretKey.getBytes(StandardCharsets.UTF_8),
+                    "HmacSHA256"
+            );
+
+            hmacSha256.init(secretKeySpec);
+
+            byte[] hash = hmacSha256.doFinal(data.getBytes(StandardCharsets.UTF_8));
+
+            StringBuilder result = new StringBuilder();
+            for (byte b : hash) {
+                result.append(String.format("%02x", b));
+            }
+
+            return result.toString();
+
+        } catch (Exception e) {
+            throw new RuntimeException("Không thể tạo chữ ký MoMo", e);
+        }
     }
 }
