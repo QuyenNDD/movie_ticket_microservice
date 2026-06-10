@@ -5,6 +5,23 @@ spring:
   application:
     name: notification-service
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2000
+          multiplier: 2
+          max-interval: 10000
+
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
@@ -21,3 +38,7 @@ app:
   internal-secret: ${INTERNAL_SECRET:8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c}
   mail:
     from: ${MAIL_FROM:${MAIL_USERNAME}}
+  rabbitmq:
+    exchange: movie.ticket.exchange
+    booking-paid-queue: notification.booking.paid.queue
+    booking-paid-routing-key: notification.booking.paid

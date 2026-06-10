@@ -1,5 +1,9 @@
 server:
   port: ${PAYMENT_SERVICE_PORT:8084}
+  error:
+    include-stacktrace: never
+    include-message: always
+    include-binding-errors: always
 
 spring:
   application:
@@ -20,6 +24,12 @@ spring:
         format-sql: true
         dialect: org.hibernate.dialect.MySQLDialect
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+
 momo:
   partner-code: ${MOMO_PARTNER_CODE}
   access-key: ${MOMO_ACCESS_KEY}
@@ -36,3 +46,7 @@ app:
   payment-retry:
     fixed-delay-ms: ${PAYMENT_RETRY_FIXED_DELAY_MS:60000}
     max-retry-count: ${PAYMENT_RETRY_MAX_COUNT:10}
+  rabbitmq:
+    exchange: movie.ticket.exchange
+    booking-paid-queue: notification.booking.paid.queue
+    booking-paid-routing-key: notification.booking.paid

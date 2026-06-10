@@ -1,4 +1,4 @@
-package com.movie.notification_service.config;
+package com.movie.payment_service.config;
 
 import jakarta.annotation.PostConstruct;
 import org.springframework.amqp.core.Binding;
@@ -7,6 +7,7 @@ import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitAdmin;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
@@ -70,5 +71,15 @@ public class RabbitMQConfig {
             rabbitAdmin.initialize();
             System.out.println(">>> RabbitMQ declare completed.");
         };
+    }
+
+    @Bean
+    public RabbitTemplate rabbitTemplate(
+            ConnectionFactory connectionFactory,
+            Jackson2JsonMessageConverter messageConverter
+    ) {
+        RabbitTemplate rabbitTemplate = new RabbitTemplate(connectionFactory);
+        rabbitTemplate.setMessageConverter(messageConverter);
+        return rabbitTemplate;
     }
 }

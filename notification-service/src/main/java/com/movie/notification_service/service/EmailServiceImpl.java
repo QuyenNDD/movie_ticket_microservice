@@ -1,5 +1,6 @@
 package com.movie.notification_service.service;
 
+import com.movie.notification_service.dto.BookingPaidEmailEvent;
 import com.movie.notification_service.dto.BookingPaidEmailRequest;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Value;
@@ -41,6 +42,55 @@ public class EmailServiceImpl implements EmailService {
         } catch (Exception e) {
             throw new RuntimeException("Gửi email xác nhận thanh toán thất bại: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public void sendBookingPaidEmail(BookingPaidEmailEvent event) {
+        BookingPaidEmailRequest request = new BookingPaidEmailRequest();
+
+        request.setToEmail(event.getToEmail());
+        request.setBookingId(event.getBookingId());
+        request.setAmount(event.getAmount());
+        request.setPaidAt(event.getPaidAt() == null ? null : event.getPaidAt().toString());
+
+        if (event.getSeats() != null) {
+            request.setSeats(
+                    event.getSeats()
+                            .stream()
+                            .map(seat -> {
+                                BookingPaidEmailRequest.SeatItem item =
+                                        new BookingPaidEmailRequest.SeatItem();
+
+                                item.setSeatId(seat.getSeatId());
+                                item.setSeatName(seat.getSeatName());
+                                item.setPrice(seat.getPrice());
+
+                                return item;
+                            })
+                            .toList()
+            );
+        }
+
+        if (event.getSnacks() != null) {
+            request.setSnacks(
+                    event.getSnacks()
+                            .stream()
+                            .map(snack -> {
+                                BookingPaidEmailRequest.SnackItem item =
+                                        new BookingPaidEmailRequest.SnackItem();
+
+                                item.setSnackId(snack.getSnackId());
+                                item.setSnackName(snack.getSnackName());
+                                item.setQuantity(snack.getQuantity());
+                                item.setPrice(snack.getPrice());
+
+                                return item;
+                            })
+                            .toList()
+            );
+        }
+
+        sendBookingPaidEmail(request);
     }
 
     private String buildHtmlContent(BookingPaidEmailRequest request) {

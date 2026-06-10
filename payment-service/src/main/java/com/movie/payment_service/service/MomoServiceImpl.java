@@ -1,8 +1,10 @@
 package com.movie.payment_service.service;
 
+import com.movie.payment_service.dto.BookingPaidEmailEvent;
 import com.movie.payment_service.dto.MoMoIpnDTO;
 import com.movie.payment_service.entity.PaymentStatus;
 import com.movie.payment_service.entity.PaymentTransaction;
+import com.movie.payment_service.publisher.BookingPaidEmailPublisher;
 import com.movie.payment_service.repository.PaymentTransactionRepository;
 import com.movie.payment_service.util.HmacSHA256Util;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,19 +52,43 @@ public class MomoServiceImpl implements MomoService {
 
     private static final String BOOKING_SERVICE_BASE_URL = "http://localhost:8082/api/v1/booking";
 
-    @Value("${app.auth-service-url:http://localhost:8083}")
+    @Value("${app.auth-service-url:http://localhost:8083/api/v1/auth}")
     private String authServiceUrl;
-
-    @Value("${app.notification-service-url:http://localhost:8085}")
-    private String notificationServiceUrl;
 
     @Autowired
     private PaymentTransactionRepository paymentTransactionRepository;
+
+    @Autowired
+    private BookingPaidEmailPublisher bookingPaidEmailPublisher;
+
+    private static final long MOMO_QR_TTL_MINUTES = 10;
 
     @Override
     @Transactional
     public String createPayment(String userId, String bookingId) {
         Map<String, Object> bookingDetail = getBookingDetail(userId, bookingId);
+
+        String bookingStatus = String.valueOf(bookingDetail.get("status"));
+
+        if ("PAID".equalsIgnoreCase(bookingStatus)) {
+            throw new RuntimeException("Hóa đơn này đã được thanh toán!");
+        }
+
+        if ("CANCELLED".equalsIgnoreCase(bookingStatus)
+                || "EXPIRED".equalsIgnoreCase(bookingStatus)) {
+            throw new RuntimeException("Hóa đơn đã hết hạn hoặc đã bị hủy, vui lòng đặt vé lại!");
+        }
+
+        if (!"PENDING".equalsIgnoreCase(bookingStatus)) {
+            throw new RuntimeException("Hóa đơn không ở trạng thái chờ thanh toán. Trạng thái hiện tại: "
+                    + bookingStatus);
+        }
+
+        Long expiresInSeconds = extractExpiresInSeconds(bookingDetail);
+
+        if (expiresInSeconds != null && expiresInSeconds <= 0) {
+            throw new RuntimeException("Hóa đơn đã quá thời gian thanh toán, vui lòng đặt vé lại!");
+        }
 
         validateBookingCanCreatePayment(bookingDetail);
 
@@ -72,15 +98,40 @@ public class MomoServiceImpl implements MomoService {
                 .findByBookingId(bookingId)
                 .orElse(null);
 
+        boolean createNewQrForExpiredPayment = false;
+
         if (existingPayment != null) {
             if (PaymentStatus.SUCCESS.equals(existingPayment.getStatus())) {
                 throw new RuntimeException("Hóa đơn này đã thanh toán, không thể tạo QR mới!");
             }
 
+            if (PaymentStatus.CONFIRM_PENDING.equals(existingPayment.getStatus())) {
+                throw new RuntimeException("Giao dịch đang được hệ thống xác nhận, vui lòng chờ trong giây lát!");
+            }
+
+            if (PaymentStatus.PAYMENT_REVIEW.equals(existingPayment.getStatus())) {
+                throw new RuntimeException("Giao dịch này đang cần kiểm tra thủ công, vui lòng liên hệ hỗ trợ!");
+            }
+
+            if (PaymentStatus.REFUND_REQUIRED.equals(existingPayment.getStatus())) {
+                throw new RuntimeException("Giao dịch này cần xử lý hoàn tiền, không thể tạo QR mới!");
+            }
+
             if (PaymentStatus.INIT.equals(existingPayment.getStatus())
                     && existingPayment.getPayUrl() != null
                     && !existingPayment.getPayUrl().isBlank()) {
-                return existingPayment.getPayUrl();
+
+                if (isPaymentQrExpired(existingPayment)) {
+                    existingPayment.setStatus(PaymentStatus.EXPIRED);
+                    existingPayment.setLastError("QR thanh toán cũ đã hết hạn, hệ thống sẽ tạo QR mới.");
+                    existingPayment.setNextRetryAt(null);
+                    paymentTransactionRepository.save(existingPayment);
+                    createNewQrForExpiredPayment = true;
+                    System.out.println(">>> QR cũ đã hết hạn. Tạo payment mới cho bookingId="
+                            + bookingId);
+                } else {
+                    return existingPayment.getPayUrl();
+                }
             }
         }
 
@@ -144,6 +195,10 @@ public class MomoServiceImpl implements MomoService {
         try {
             PaymentTransaction payment = existingPayment != null ? existingPayment : new PaymentTransaction();
 
+            if (createNewQrForExpiredPayment) {
+                payment.setCreatedAt(LocalDateTime.now());
+            }
+
             payment.setBookingId(bookingId);
             payment.setUserId(userId);
             payment.setOrderId(orderId);
@@ -194,38 +249,90 @@ public class MomoServiceImpl implements MomoService {
             return;
         }
 
-        if (dto.getResultCode() == null || dto.getResultCode() != 0) {
-            payment.setStatus(PaymentStatus.FAILED);
-            payment.setTransId(dto.getTransId());
+        String resultCode = String.valueOf(dto.getResultCode());
+
+        if (!"0".equals(resultCode)) {
+            if ("1005".equals(resultCode)) {
+                payment.setStatus(PaymentStatus.EXPIRED);
+                payment.setLastError("MoMo báo QR hoặc URL thanh toán đã hết hạn. resultCode=1005");
+            } else {
+                payment.setStatus(PaymentStatus.FAILED);
+                payment.setLastError("MoMo thanh toán thất bại. resultCode="
+                        + resultCode
+                        + ", message="
+                        + dto.getMessage());
+            }
+
+            payment.setNextRetryAt(null);
             paymentTransactionRepository.save(payment);
 
-            System.out.println(">>> Thanh toán MoMo thất bại hoặc khách hủy. orderId=" + dto.getOrderId());
+            System.out.println(">>> MoMo trả thanh toán thất bại. bookingId="
+                    + payment.getBookingId()
+                    + ", resultCode="
+                    + resultCode);
+
             return;
         }
 
         String userId = decodeExtraData(dto.getExtraData());
 
         if (!bookingId.equals(payment.getBookingId())) {
-            throw new RuntimeException("orderId không khớp bookingId trong payment transaction!");
+            markPaymentReview(
+                    payment,
+                    dto.getTransId(),
+                    "orderId không khớp bookingId trong payment transaction!"
+            );
+            return;
         }
 
         if (!userId.equals(payment.getUserId())) {
-            throw new RuntimeException("extraData userId không khớp payment transaction!");
+            markPaymentReview(
+                    payment,
+                    dto.getTransId(),
+                    "extraData userId không khớp payment transaction!"
+            );
+            return;
         }
 
         Long momoAmount = Long.parseLong(dto.getAmount());
 
         if (!payment.getAmount().equals(momoAmount)) {
-            throw new RuntimeException("Số tiền MoMo không khớp payment transaction! expected="
-                    + payment.getAmount() + ", actual=" + momoAmount);
+            markPaymentReview(
+                    payment,
+                    dto.getTransId(),
+                    "Số tiền MoMo không khớp payment transaction! expected="
+                            + payment.getAmount()
+                            + ", actual="
+                            + momoAmount
+            );
+            return;
         }
 
-        Map<String, Object> bookingDetail = getBookingDetail(userId, bookingId);
+        Map<String, Object> bookingDetail;
+
+        try {
+            bookingDetail = getBookingDetail(userId, bookingId);
+        } catch (Exception ex) {
+            markPaymentReview(
+                    payment,
+                    dto.getTransId(),
+                    "MoMo đã thanh toán nhưng không lấy được booking detail: " + ex.getMessage()
+            );
+            return;
+        }
+
         Long bookingAmount = extractAmountFromBooking(bookingDetail);
 
         if (!bookingAmount.equals(momoAmount)) {
-            throw new RuntimeException("Số tiền MoMo không khớp booking! bookingAmount="
-                    + bookingAmount + ", momoAmount=" + momoAmount);
+            markPaymentReview(
+                    payment,
+                    dto.getTransId(),
+                    "Số tiền MoMo không khớp booking! bookingAmount="
+                            + bookingAmount
+                            + ", momoAmount="
+                            + momoAmount
+            );
+            return;
         }
 
         String bookingStatus = String.valueOf(bookingDetail.get("status"));
@@ -238,16 +345,47 @@ public class MomoServiceImpl implements MomoService {
                 payment.setPaidAt(LocalDateTime.now());
             }
 
+            payment.setLastError(null);
+            payment.setNextRetryAt(null);
             paymentTransactionRepository.save(payment);
 
             sendBookingPaidEmailIfNeeded(payment);
 
-            System.out.println(">>> Booking đã PAID trước đó. Đánh dấu payment SUCCESS và bỏ qua confirm.");
+            System.out.println(">>> Booking đã PAID trước đó. Đánh dấu payment SUCCESS.");
+            return;
+        }
+
+        if ("CANCELLED".equalsIgnoreCase(bookingStatus)
+                || "EXPIRED".equalsIgnoreCase(bookingStatus)) {
+            markRefundRequired(
+                    payment,
+                    dto.getTransId(),
+                    "MoMo đã thanh toán thành công nhưng booking đã "
+                            + bookingStatus
+                            + ". Cần xử lý hoàn tiền."
+            );
             return;
         }
 
         if (!"PENDING".equalsIgnoreCase(bookingStatus)) {
-            throw new RuntimeException("Booking không còn ở trạng thái PENDING. Status hiện tại: " + bookingStatus);
+            markPaymentReview(
+                    payment,
+                    dto.getTransId(),
+                    "MoMo đã thanh toán nhưng booking không còn ở trạng thái PENDING. Status hiện tại: "
+                            + bookingStatus
+            );
+            return;
+        }
+
+        Long expiresInSeconds = extractExpiresInSeconds(bookingDetail);
+
+        if (expiresInSeconds != null && expiresInSeconds <= 0) {
+            markRefundRequired(
+                    payment,
+                    dto.getTransId(),
+                    "MoMo đã thanh toán thành công nhưng booking đã quá thời gian thanh toán. Cần xử lý hoàn tiền."
+            );
+            return;
         }
 
         payment.setStatus(PaymentStatus.CONFIRM_PENDING);
@@ -418,9 +556,14 @@ public class MomoServiceImpl implements MomoService {
             payment.setLastError(ex.getMessage());
 
             if (nextRetry >= maxRetryCount) {
-                payment.setNextRetryAt(LocalDateTime.now().plusMinutes(30));
+                payment.setStatus(PaymentStatus.PAYMENT_REVIEW);
+                payment.setNextRetryAt(null);
+                payment.setLastError("MoMo đã thanh toán nhưng confirm booking lỗi quá số lần retry. Error: "
+                        + ex.getMessage());
             } else {
+                payment.setStatus(PaymentStatus.CONFIRM_PENDING);
                 payment.setNextRetryAt(LocalDateTime.now().plusMinutes(calculateBackoffMinutes(nextRetry)));
+                payment.setLastError(ex.getMessage());
             }
 
             paymentTransactionRepository.save(payment);
@@ -450,155 +593,44 @@ public class MomoServiceImpl implements MomoService {
         return 10;
     }
 
-    private String getUserEmail(String userId) {
-        RestTemplate restTemplate = new RestTemplate();
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("X-Internal-Secret", internalSecret);
-
-        HttpEntity<String> entity = new HttpEntity<>(null, headers);
-
-        ResponseEntity<Map> response = restTemplate.exchange(
-                authServiceUrl + "/api/v1/auth/internal/users/" + userId,
-                HttpMethod.GET,
-                entity,
-                Map.class
-        );
-
-        Map<String, Object> body = response.getBody();
-
-        if (body == null || body.get("email") == null) {
-            throw new RuntimeException("Không lấy được email user từ auth-service!");
-        }
-
-        return body.get("email").toString();
-    }
-
     private void sendBookingPaidEmailIfNeeded(PaymentTransaction payment) {
-        if (payment == null) {
-            return;
-        }
-
         if (Boolean.TRUE.equals(payment.getEmailSent())) {
             return;
         }
 
         try {
-            String email = getUserEmail(payment.getUserId());
-
             Map<String, Object> bookingDetail = getBookingDetail(
                     payment.getUserId(),
                     payment.getBookingId()
             );
 
-            Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("toEmail", email);
-            requestBody.put("bookingId", payment.getBookingId());
-            requestBody.put("amount", payment.getAmount());
-            requestBody.put(
-                    "paidAt",
-                    payment.getPaidAt() == null
-                            ? LocalDateTime.now().toString()
-                            : payment.getPaidAt().toString()
-            );
+            String toEmail = getUserEmailFromAuth(payment.getUserId());
 
-            requestBody.put("seats", buildEmailSeatItems(bookingDetail));
-            requestBody.put("snacks", buildEmailSnackItems(bookingDetail));
+            BookingPaidEmailEvent event = BookingPaidEmailEvent.builder()
+                    .toEmail(toEmail)
+                    .bookingId(payment.getBookingId())
+                    .amount(payment.getAmount())
+                    .paidAt(payment.getPaidAt())
+                    .seats(buildSeatItemsFromBookingDetail(bookingDetail))
+                    .snacks(buildSnackItemsFromBookingDetail(bookingDetail))
+                    .build();
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("X-Internal-Secret", internalSecret);
-
-            HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
-
-            RestTemplate restTemplate = new RestTemplate();
-
-            restTemplate.exchange(
-                    notificationServiceUrl + "/api/v1/notifications/internal/booking-paid",
-                    HttpMethod.POST,
-                    entity,
-                    String.class
-            );
+            bookingPaidEmailPublisher.publish(event);
 
             payment.setEmailSent(true);
-            payment.setEmailSentAt(LocalDateTime.now());
             payment.setEmailError(null);
             paymentTransactionRepository.save(payment);
 
-            System.out.println(">>> Đã gửi email xác nhận thanh toán cho user " + payment.getUserId());
+            System.out.println(">>> Đã publish email event qua RabbitMQ. bookingId="
+                    + payment.getBookingId());
 
-        } catch (Exception e) {
+        } catch (Exception ex) {
             payment.setEmailSent(false);
-            payment.setEmailError(e.getMessage());
+            payment.setEmailError(ex.getMessage());
             paymentTransactionRepository.save(payment);
 
-            System.err.println(">>> Gửi email thanh toán thất bại. bookingId="
-                    + payment.getBookingId()
-                    + ", error="
-                    + e.getMessage());
+            System.err.println(">>> Publish email event thất bại: " + ex.getMessage());
         }
-    }
-
-    private List<Map<String, Object>> buildEmailSeatItems(Map<String, Object> bookingDetail) {
-        List<Map<String, Object>> result = new ArrayList<>();
-
-        Object seatsObj = bookingDetail.get("seats");
-
-        if (!(seatsObj instanceof List<?> seats)) {
-            return result;
-        }
-
-        for (Object item : seats) {
-            if (!(item instanceof Map<?, ?> seatMap)) {
-                continue;
-            }
-
-            Map<String, Object> seat = new HashMap<>();
-
-            Object seatId = seatMap.get("seatId");
-            Object seatName = seatMap.get("seatName");
-            Object price = seatMap.get("priceAtPurchase");
-
-            seat.put("seatId", seatId == null ? "" : seatId.toString());
-            seat.put("seatName", seatName == null ? seat.get("seatId") : seatName.toString());
-            seat.put("price", price == null ? 0L : new BigDecimal(price.toString()).longValue());
-
-            result.add(seat);
-        }
-
-        return result;
-    }
-
-    private List<Map<String, Object>> buildEmailSnackItems(Map<String, Object> bookingDetail) {
-        List<Map<String, Object>> result = new ArrayList<>();
-
-        Object snacksObj = bookingDetail.get("snacks");
-
-        if (!(snacksObj instanceof List<?> snacks)) {
-            return result;
-        }
-
-        for (Object item : snacks) {
-            if (!(item instanceof Map<?, ?> snackMap)) {
-                continue;
-            }
-
-            Map<String, Object> snack = new HashMap<>();
-
-            Object snackId = snackMap.get("snackId");
-            Object snackName = snackMap.get("snackName");
-            Object quantity = snackMap.get("quantity");
-            Object price = snackMap.get("priceAtPurchase");
-
-            snack.put("snackId", snackId == null ? "" : snackId.toString());
-            snack.put("snackName", snackName == null ? snack.get("snackId") : snackName.toString());
-            snack.put("quantity", quantity == null ? 0 : Integer.parseInt(quantity.toString()));
-            snack.put("price", price == null ? 0L : new BigDecimal(price.toString()).longValue());
-
-            result.add(snack);
-        }
-
-        return result;
     }
 
     private String hmacSHA256(String data, String secretKey) {
@@ -623,5 +655,176 @@ public class MomoServiceImpl implements MomoService {
         } catch (Exception e) {
             throw new RuntimeException("Không thể tạo chữ ký MoMo", e);
         }
+    }
+
+    private void markPaymentReview(
+            PaymentTransaction payment,
+            String transId,
+            String reason
+    ) {
+        payment.setStatus(PaymentStatus.PAYMENT_REVIEW);
+        payment.setTransId(transId);
+
+        if (payment.getPaidAt() == null) {
+            payment.setPaidAt(LocalDateTime.now());
+        }
+
+        payment.setLastError(reason);
+        payment.setNextRetryAt(null);
+
+        paymentTransactionRepository.save(payment);
+
+        System.err.println(">>> [PAYMENT_REVIEW] bookingId="
+                + payment.getBookingId()
+                + ", orderId="
+                + payment.getOrderId()
+                + ", reason="
+                + reason);
+    }
+
+    private void markRefundRequired(
+            PaymentTransaction payment,
+            String transId,
+            String reason
+    ) {
+        payment.setStatus(PaymentStatus.REFUND_REQUIRED);
+        payment.setTransId(transId);
+
+        if (payment.getPaidAt() == null) {
+            payment.setPaidAt(LocalDateTime.now());
+        }
+
+        payment.setLastError(reason);
+        payment.setNextRetryAt(null);
+
+        paymentTransactionRepository.save(payment);
+
+        System.err.println(">>> [REFUND_REQUIRED] bookingId="
+                + payment.getBookingId()
+                + ", orderId="
+                + payment.getOrderId()
+                + ", reason="
+                + reason);
+    }
+    private List<BookingPaidEmailEvent.SeatItem> buildSeatItemsFromBookingDetail(
+            Map<String, Object> bookingDetail
+    ) {
+        Object seatsObj = bookingDetail.get("seats");
+
+        if (!(seatsObj instanceof List<?> seats)) {
+            return List.of();
+        }
+
+        return seats.stream().map(item -> {
+            Map<String, Object> seat = (Map<String, Object>) item;
+
+            return BookingPaidEmailEvent.SeatItem.builder()
+                    .seatId(String.valueOf(seat.get("seatId")))
+                    .seatName(String.valueOf(seat.get("seatName")))
+                    .price(toLong(seat.get("price")))
+                    .build();
+        }).toList();
+    }
+
+    private List<BookingPaidEmailEvent.SnackItem> buildSnackItemsFromBookingDetail(
+            Map<String, Object> bookingDetail
+    ) {
+        Object snacksObj = bookingDetail.get("snacks");
+
+        if (!(snacksObj instanceof List<?> snacks)) {
+            return List.of();
+        }
+
+        return snacks.stream().map(item -> {
+            Map<String, Object> snack = (Map<String, Object>) item;
+
+            return BookingPaidEmailEvent.SnackItem.builder()
+                    .snackId(String.valueOf(snack.get("snackId")))
+                    .snackName(String.valueOf(snack.get("snackName")))
+                    .quantity(toInteger(snack.get("quantity")))
+                    .price(toLong(snack.get("price")))
+                    .build();
+        }).toList();
+    }
+
+    private Long toLong(Object value) {
+        if (value == null) {
+            return 0L;
+        }
+
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+
+        return Long.parseLong(value.toString());
+    }
+
+    private Integer toInteger(Object value) {
+        if (value == null) {
+            return 0;
+        }
+
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+
+        return Integer.parseInt(value.toString());
+    }
+
+    private String getUserEmailFromAuth(String userId) {
+        String url = authServiceUrl + "/internal/users/" + userId;
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Internal-Secret", internalSecret);
+
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        RestTemplate restTemplate = new RestTemplate();
+        ResponseEntity<Map> response = restTemplate.exchange(
+                url,
+                HttpMethod.GET,
+                entity,
+                Map.class
+        );
+
+        Map<String, Object> body = response.getBody();
+
+        if (body == null) {
+            throw new RuntimeException("Không lấy được thông tin user từ auth-service!");
+        }
+
+        if (body.get("email") != null) {
+            return body.get("email").toString();
+        }
+
+        Object dataObj = body.get("data");
+        if (dataObj instanceof Map<?, ?> data && data.get("email") != null) {
+            return data.get("email").toString();
+        }
+
+        throw new RuntimeException("Không lấy được email user từ auth-service!");
+    }
+
+    private boolean isPaymentQrExpired(PaymentTransaction payment) {
+        if (payment.getCreatedAt() == null) {
+            return false;
+        }
+
+        return payment.getCreatedAt()
+                .plusMinutes(MOMO_QR_TTL_MINUTES)
+                .isBefore(LocalDateTime.now());
+    }
+
+    private Long extractExpiresInSeconds(Map<String, Object> bookingDetail) {
+        Object value = bookingDetail.get("expiresInSeconds");
+
+        if (value == null) {
+            return null;
+        }
+
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+
+        return Long.parseLong(value.toString());
     }
 }
