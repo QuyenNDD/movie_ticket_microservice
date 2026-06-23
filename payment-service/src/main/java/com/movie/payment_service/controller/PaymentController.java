@@ -43,4 +43,17 @@ public class PaymentController {
         // nếu không MoMo sẽ liên tục gọi lại (Retry) gây rác hệ thống.
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/test/{bookingId}/success")
+    public ResponseEntity<Map<String, String>> testPaymentSuccess(
+            @RequestHeader("X-User-Id") String userId,
+            @PathVariable String bookingId
+    ) {
+        moMoService.testConfirmSuccess(userId, bookingId);
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Đã giả lập thanh toán thành công và gửi email nếu đủ điều kiện",
+                "bookingId", bookingId
+        ));
+    }
 }

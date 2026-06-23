@@ -113,6 +113,7 @@ public class RoomServiceImpl implements RoomService{
         for (RoomRequestDTO.SeatCreateRequest seatReq : request.getSeats()) {
             validateSingleSeatInLayout(seatReq, request.getTotalRows(), request.getTotalColumns());
 
+            String seatType = normalizeSeatType(seatReq.getSeatType());
             String gridKey = seatReq.getRowIndex() + "-" + seatReq.getColumnIndex();
 
             if (!usedGridPositions.add(gridKey)) {
@@ -120,17 +121,18 @@ public class RoomServiceImpl implements RoomService{
                         + seatReq.getRowIndex() + ", columnIndex=" + seatReq.getColumnIndex());
             }
 
-            String seatType = normalizeSeatType(seatReq.getSeatType());
+            if ("EMPTY".equalsIgnoreCase(seatType)) {
+                continue;
+            }
 
-            if (!"EMPTY".equalsIgnoreCase(seatType)) {
-                String labelKey = seatReq.getRowLabel().trim().toUpperCase()
-                        + "-"
-                        + seatReq.getColumnLabel().trim().toUpperCase();
+            String labelKey = seatReq.getRowLabel().trim().toUpperCase()
+                    + "-"
+                    + seatReq.getColumnLabel().trim().toUpperCase();
 
-                if (!usedSeatLabels.add(labelKey)) {
-                    throw new APIException("Bị trùng mã ghế: "
-                            + seatReq.getRowLabel() + seatReq.getColumnLabel());
-                }
+            if (!usedSeatLabels.add(labelKey)) {
+                throw new APIException("Bị trùng mã ghế: "
+                        + seatReq.getRowLabel()
+                        + seatReq.getColumnLabel());
             }
         }
     }

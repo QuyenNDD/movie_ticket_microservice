@@ -400,6 +400,65 @@ public class MomoServiceImpl implements MomoService {
         System.out.println(">>> [THÀNH CÔNG] Đã ghi nhận thanh toán MoMo cho hóa đơn " + bookingId);
     }
 
+    @Override
+    @Transactional
+    public void testConfirmSuccess(String userId, String bookingId) {
+        Map<String, Object> bookingDetail = getBookingDetail(userId, bookingId);
+
+        if (bookingDetail == null) {
+            throw new RuntimeException("Không lấy được thông tin booking!");
+        }
+
+        String bookingStatus = String.valueOf(bookingDetail.get("status"));
+
+        if ("CANCELLED".equalsIgnoreCase(bookingStatus)
+                || "EXPIRED".equalsIgnoreCase(bookingStatus)) {
+            throw new RuntimeException("Booking đã bị hủy hoặc hết hạn, không thể giả lập thanh toán!");
+        }
+
+        Long amount = extractAmountFromBooking(bookingDetail);
+
+        PaymentTransaction payment = paymentTransactionRepository
+                .findByBookingId(bookingId)
+                .orElseGet(PaymentTransaction::new);
+
+        payment.setBookingId(bookingId);
+        payment.setUserId(userId);
+        payment.setAmount(amount);
+
+        if (payment.getOrderId() == null || payment.getOrderId().isBlank()) {
+            String testOrderId = bookingId + "_TEST_" + System.currentTimeMillis();
+            payment.setOrderId(testOrderId);
+            payment.setRequestId(testOrderId);
+        }
+
+        if (payment.getRequestId() == null || payment.getRequestId().isBlank()) {
+            payment.setRequestId(payment.getOrderId());
+        }
+
+        payment.setTransId("TEST_TRANS_" + System.currentTimeMillis());
+        payment.setPaidAt(LocalDateTime.now());
+        payment.setStatus(PaymentStatus.CONFIRM_PENDING);
+        payment.setLastError(null);
+        payment.setNextRetryAt(null);
+
+        paymentTransactionRepository.save(payment);
+
+        if ("PAID".equalsIgnoreCase(bookingStatus)) {
+            payment.setStatus(PaymentStatus.SUCCESS);
+            paymentTransactionRepository.save(payment);
+
+            sendBookingPaidEmailIfNeeded(payment);
+            return;
+        }
+
+        if (!"PENDING".equalsIgnoreCase(bookingStatus)) {
+            throw new RuntimeException("Booking không ở trạng thái PENDING hoặc PAID. Status hiện tại: " + bookingStatus);
+        }
+
+        confirmBookingAndMarkSuccess(payment);
+    }
+
     private void validateMomoSignature(MoMoIpnDTO dto) {
         String rawHash = "accessKey=" + accessKey
                 + "&amount=" + dto.getAmount()

@@ -5,4 +5,5 @@ import com.movie.payment_service.dto.MoMoIpnDTO;
 public interface MomoService {
     String createPayment(String userId, String bookingId);
     void processIpn(MoMoIpnDTO dto);
+    void testConfirmSuccess(String userId, String bookingId);
 }
