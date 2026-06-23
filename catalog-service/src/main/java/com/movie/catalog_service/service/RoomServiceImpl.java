@@ -306,6 +306,7 @@ public class RoomServiceImpl implements RoomService{
     }
 
     @Override
+    @Transactional
     public RoomResponseDTO updateRoom(String roomId, RoomRequestDTO request) {
         validateRoomLayout(request);
         Room room = roomRepository.findById(roomId)
@@ -364,6 +365,7 @@ public class RoomServiceImpl implements RoomService{
 
             room.getSeats().addAll(newSeats);
         }
+        room.setTotalSeats(room.getSeats().size());
 
         // (Tùy chọn) Nếu Entity Room của bạn có trường lưu tổng số ghế, cập nhật luôn ở đây:
         // room.setTotalSeats(room.getSeats().size());
