@@ -1,7 +1,9 @@
 package com.movie.auth_service.controller;
 
+import com.movie.auth_service.dto.request.ForgotPasswordRequestDTO;
 import com.movie.auth_service.dto.request.LoginRequestDTO;
 import com.movie.auth_service.dto.request.RegisterRequestDTO;
+import com.movie.auth_service.dto.request.ResetPasswordRequestDTO;
 import com.movie.auth_service.dto.request.TokenRefreshRequestDTO;
 import com.movie.auth_service.dto.response.JwtResponseDTO;
 import com.movie.auth_service.dto.response.UserInternalResponseDTO;
@@ -56,6 +58,23 @@ public class AuthController {
     public ResponseEntity<String> logout(@Valid @RequestBody TokenRefreshRequestDTO requestDTO) {
         userService.logout(requestDTO);
         return new ResponseEntity<>("Đăng xuất thành công!", HttpStatus.OK);
+    }
+
+    // 6. QUÊN MẬT KHẨU (gửi email chứa link đặt lại mật khẩu nếu email tồn tại)
+    @PostMapping("/forgot-password")
+    public ResponseEntity<String> forgotPassword(@Valid @RequestBody ForgotPasswordRequestDTO requestDTO) {
+        userService.forgotPassword(requestDTO);
+        return new ResponseEntity<>(
+                "Nếu email tồn tại trong hệ thống, link đặt lại mật khẩu đã được gửi!",
+                HttpStatus.OK
+        );
+    }
+
+    // 7. ĐẶT LẠI MẬT KHẨU (dùng token nhận được qua email)
+    @PostMapping("/reset-password")
+    public ResponseEntity<String> resetPassword(@Valid @RequestBody ResetPasswordRequestDTO requestDTO) {
+        userService.resetPassword(requestDTO);
+        return new ResponseEntity<>("Đặt lại mật khẩu thành công!", HttpStatus.OK);
     }
 
     @GetMapping("/internal/users/{userId}")

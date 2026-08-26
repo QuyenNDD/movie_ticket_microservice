@@ -28,3 +28,9 @@ spring:
 
 app:
   internal-secret: ${INTERNAL_SECRET:dev-internal-secret}
+  notification-service-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8085}
+  password-reset-expiration-ms: ${PASSWORD_RESET_EXPIRATION_MS:900000}
+  password-reset-url: ${PASSWORD_RESET_URL:http://localhost:5173/reset-password}
+  rest-client:
+    connect-timeout-ms: ${REST_CLIENT_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${REST_CLIENT_READ_TIMEOUT_MS:5000}

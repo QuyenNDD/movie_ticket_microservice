@@ -1,6 +1,7 @@
 package com.movie.notification_service.controller;
 
 import com.movie.notification_service.dto.BookingPaidEmailRequest;
+import com.movie.notification_service.dto.PasswordResetEmailRequest;
 import com.movie.notification_service.service.EmailService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -26,6 +27,17 @@ public class NotificationController {
 
         return ResponseEntity.ok(Map.of(
                 "message", "Email xác nhận thanh toán đã được gửi"
+        ));
+    }
+
+    @PostMapping("/internal/password-reset")
+    public ResponseEntity<Map<String, String>> sendPasswordResetEmail(
+            @Valid @RequestBody PasswordResetEmailRequest request
+    ) {
+        emailService.sendPasswordResetEmail(request);
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Email đặt lại mật khẩu đã được gửi"
         ));
     }
 }

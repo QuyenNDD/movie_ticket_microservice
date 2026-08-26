@@ -14,8 +14,8 @@
 - [x] Xem thông tin cá nhân (`/me`)
 - [x] Đăng xuất (thu hồi refresh token)
   - → Entity đã tạo: `RefreshToken` (userId, token, revoked, expiresAt) — auth_db
-- [ ] Quên mật khẩu / đặt lại mật khẩu qua email
-  - → Entity cần thêm: `PasswordResetToken` (userId, token, expiresAt) — auth_db
+- [x] Quên mật khẩu / đặt lại mật khẩu qua email
+  - → Entity đã tạo: `PasswordResetToken` (userId, token, used, expiresAt) — auth_db
 - [ ] Đổi mật khẩu
   - → không cần entity mới, dùng lại `User`
 - [ ] Xác minh email khi đăng ký
@@ -155,7 +155,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 25 | 40 |
+| 1 — MVP lõi | 26 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |

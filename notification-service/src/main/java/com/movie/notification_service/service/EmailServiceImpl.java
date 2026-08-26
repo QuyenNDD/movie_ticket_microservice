@@ -2,6 +2,7 @@ package com.movie.notification_service.service;
 
 import com.movie.notification_service.dto.BookingPaidEmailEvent;
 import com.movie.notification_service.dto.BookingPaidEmailRequest;
+import com.movie.notification_service.dto.PasswordResetEmailRequest;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -91,6 +92,44 @@ public class EmailServiceImpl implements EmailService {
         }
 
         sendBookingPaidEmail(request);
+    }
+
+    @Override
+    public void sendPasswordResetEmail(PasswordResetEmailRequest request) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setFrom(fromEmail);
+            helper.setTo(request.getToEmail());
+            helper.setSubject("Yêu cầu đặt lại mật khẩu");
+            helper.setText(buildPasswordResetHtmlContent(request), true);
+
+            mailSender.send(message);
+
+            System.out.println(">>> Đã gửi email đặt lại mật khẩu tới: " + request.getToEmail());
+
+        } catch (Exception e) {
+            throw new RuntimeException("Gửi email đặt lại mật khẩu thất bại: " + e.getMessage(), e);
+        }
+    }
+
+    private String buildPasswordResetHtmlContent(PasswordResetEmailRequest request) {
+        return """
+            <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                <h2>Yêu cầu đặt lại mật khẩu</h2>
+
+                <p>Xin chào,</p>
+
+                <p>Chúng tôi nhận được yêu cầu đặt lại mật khẩu cho tài khoản của bạn.
+                Nhấn vào liên kết bên dưới để đặt mật khẩu mới:</p>
+
+                <p><a href="%s" style="display:inline-block;padding:10px 20px;background:#e50914;color:#fff;text-decoration:none;border-radius:4px;">Đặt lại mật khẩu</a></p>
+
+                <p>Liên kết sẽ hết hạn sau một thời gian ngắn. Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.</p>
+            </div>
+            """.formatted(request.getResetLink());
     }
 
     private String buildHtmlContent(BookingPaidEmailRequest request) {

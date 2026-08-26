@@ -1,19 +1,26 @@
 package com.movie.auth_service.service;
 
+import com.movie.auth_service.dto.request.ForgotPasswordRequestDTO;
 import com.movie.auth_service.dto.request.LoginRequestDTO;
 import com.movie.auth_service.dto.request.RegisterRequestDTO;
+import com.movie.auth_service.dto.request.ResetPasswordRequestDTO;
 import com.movie.auth_service.dto.request.TokenRefreshRequestDTO;
 import com.movie.auth_service.dto.response.JwtResponseDTO;
 import com.movie.auth_service.dto.response.UserInternalResponseDTO;
 import com.movie.auth_service.dto.response.UserResponseDTO;
+import com.movie.auth_service.entity.PasswordResetToken;
 import com.movie.auth_service.entity.RefreshToken;
 import com.movie.auth_service.entity.User;
 import com.movie.auth_service.jwt.JwtUtils;
+import com.movie.auth_service.repository.PasswordResetTokenRepository;
 import com.movie.auth_service.repository.RefreshTokenRepository;
 import com.movie.auth_service.repository.UserRepository;
 import com.movie.auth_service.security.CustomUserDetails;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -21,9 +28,13 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class UserServiceImpl implements UserService{
@@ -32,6 +43,9 @@ public class UserServiceImpl implements UserService{
 
     @Autowired
     RefreshTokenRepository refreshTokenRepository;
+
+    @Autowired
+    PasswordResetTokenRepository passwordResetTokenRepository;
 
     @Autowired
     PasswordEncoder passwordEncoder;
@@ -44,6 +58,21 @@ public class UserServiceImpl implements UserService{
 
     @Autowired
     ModelMapper modelMapper;
+
+    @Autowired
+    RestTemplate restTemplate;
+
+    @Value("${app.internal-secret:dev-internal-secret}")
+    private String internalSecret;
+
+    @Value("${app.notification-service-url:http://localhost:8085}")
+    private String notificationServiceUrl;
+
+    @Value("${app.password-reset-expiration-ms:900000}")
+    private long passwordResetExpirationMs;
+
+    @Value("${app.password-reset-url:http://localhost:5173/reset-password}")
+    private String passwordResetUrl;
 
     @Override
     public String registerUser(RegisterRequestDTO registerRequest) {
@@ -132,6 +161,71 @@ public class UserServiceImpl implements UserService{
 
     private LocalDateTime toLocalDateTime(java.util.Date date) {
         return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
+    }
+
+    @Override
+    public void forgotPassword(ForgotPasswordRequestDTO forgotPasswordRequest) {
+        // Không tiết lộ email có tồn tại hay không: luôn trả về "thành công" ở Controller.
+        userRepository.findByEmail(forgotPasswordRequest.getEmail()).ifPresent(user -> {
+            PasswordResetToken resetToken = new PasswordResetToken();
+            resetToken.setUserId(user.getId());
+            resetToken.setToken(UUID.randomUUID().toString());
+            resetToken.setUsed(false);
+            resetToken.setExpiresAt(LocalDateTime.now().plus(java.time.Duration.ofMillis(passwordResetExpirationMs)));
+            passwordResetTokenRepository.save(resetToken);
+
+            String resetLink = passwordResetUrl + "?token=" + resetToken.getToken();
+            try {
+                sendPasswordResetEmail(user.getEmail(), resetLink);
+            } catch (Exception ex) {
+                // Không để lỗi gửi mail rò rỉ ra ngoài (tránh lộ email có tồn tại hay không);
+                // token vẫn được lưu, người dùng có thể yêu cầu gửi lại nếu cần.
+                System.err.println(">>> Gửi email đặt lại mật khẩu thất bại: " + ex.getMessage());
+            }
+        });
+    }
+
+    @Override
+    public void resetPassword(ResetPasswordRequestDTO resetPasswordRequest) {
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(resetPasswordRequest.getToken())
+                .orElseThrow(() -> new RuntimeException("Token đặt lại mật khẩu không hợp lệ!"));
+
+        if (resetToken.isUsed()) {
+            throw new RuntimeException("Token đặt lại mật khẩu đã được sử dụng!");
+        }
+
+        if (resetToken.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new RuntimeException("Token đặt lại mật khẩu đã hết hạn. Vui lòng yêu cầu lại!");
+        }
+
+        User user = userRepository.findById(resetToken.getUserId())
+                .orElseThrow(() -> new UsernameNotFoundException("Không tìm thấy thông tin người dùng"));
+
+        user.setPassword(passwordEncoder.encode(resetPasswordRequest.getNewPassword()));
+        userRepository.save(user);
+
+        resetToken.setUsed(true);
+        passwordResetTokenRepository.save(resetToken);
+
+        // Thu hồi mọi refresh token đang hoạt động để buộc đăng nhập lại trên mọi thiết bị
+        var activeTokens = refreshTokenRepository.findByUserIdAndRevokedFalse(user.getId());
+        activeTokens.forEach(rt -> rt.setRevoked(true));
+        refreshTokenRepository.saveAll(activeTokens);
+    }
+
+    private void sendPasswordResetEmail(String toEmail, String resetLink) {
+        String url = notificationServiceUrl + "/api/v1/notifications/internal/password-reset";
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Internal-Secret", internalSecret);
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+
+        Map<String, String> body = new HashMap<>();
+        body.put("toEmail", toEmail);
+        body.put("resetLink", resetLink);
+
+        HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
+        restTemplate.postForEntity(url, entity, String.class);
     }
 
     @Override
