@@ -22,7 +22,7 @@ spring:
         - id: catalog-service-protected-get
           uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
           predicates:
-            - Path=/api/v1/catalog/rooms/**,/api/v1/catalog/snacks/**
+            - Path=/api/v1/catalog/rooms/**,/api/v1/catalog/snacks/**,/api/v1/catalog/favorites/**
             - Method=GET
           filters:
             - AuthenticationFilter

@@ -43,8 +43,11 @@
     Mỗi user chỉ đánh giá 1 lần/phim (unique constraint). API tại
     `/api/v1/catalog/reviews` (không nằm dưới `/movies/**` để tránh bị
     gateway coi là API quản trị movie cần quyền ADMIN).
-- [ ] Danh sách yêu thích / watchlist
-  - → Entity cần thêm: `Favorite` (userId, movieId) — catalog_db
+- [x] Danh sách yêu thích / watchlist
+  - → Entity đã tạo: `Favorite` (userId, movieId, createdAt) — catalog_db, unique
+    constraint (userId, movieId). API tại `/api/v1/catalog/favorites`; khác
+    `/reviews` ở chỗ `GET` cũng cần đăng nhập (danh sách riêng của user, không
+    public) — đã thêm route `GET` yêu cầu auth tương ứng ở api-gateway.
 - [ ] Gợi ý phim liên quan / phổ biến / sắp ra mắt
   - → không cần entity mới, suy ra từ `Movie`/`Review` hiện có (hoặc `ViewHistory` nếu cá nhân hóa — xem Giai đoạn 5)
 
@@ -162,7 +165,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 29 | 40 |
+| 1 — MVP lõi | 30 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |
@@ -180,7 +183,7 @@
 | `PasswordResetToken` | auth_db | userId, token, expiresAt | quên mật khẩu |
 | `EmailVerificationToken` | auth_db | userId, token, expiresAt | xác minh email |
 | `Review` ✅ đã tạo | catalog_db | movieId, userId, rating, comment | đánh giá phim |
-| `Favorite` | catalog_db | userId, movieId | watchlist |
+| `Favorite` ✅ đã tạo | catalog_db | userId, movieId | watchlist |
 | `Ticket` | booking_db | bookingSeatId, qrCode, checkedInAt, checkedInBy | vé QR + check-in |
 | `RefundTransaction` | payment_db | paymentTransactionId, amount, reason, status | hoàn tiền |
 | `Notification` | notification_db (**mới**) | userId, title, content, type, isRead, createdAt | thông báo trong app |
