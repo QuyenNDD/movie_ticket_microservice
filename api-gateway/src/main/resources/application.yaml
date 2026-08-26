@@ -16,7 +16,7 @@ spring:
         - id: catalog-service-public-get
           uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
           predicates:
-            - Path=/api/v1/catalog/movies/**,/api/v1/catalog/cinemas/**,/api/v1/catalog/showtimes/**
+            - Path=/api/v1/catalog/movies/**,/api/v1/catalog/cinemas/**,/api/v1/catalog/showtimes/**,/api/v1/catalog/reviews/**
             - Method=GET
 
         - id: catalog-service-protected-get

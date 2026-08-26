@@ -38,8 +38,11 @@
 - [x] CRUD suất chiếu
 - [x] Xem lịch chiếu theo rạp + ngày, theo phim + ngày
 - [x] CRUD snack (bắp nước), cập nhật ảnh
-- [ ] Đánh giá & bình luận phim (review, rating)
-  - → Entity cần thêm: `Review` (movieId, userId, rating, comment, createdAt) — catalog_db
+- [x] Đánh giá & bình luận phim (review, rating)
+  - → Entity đã tạo: `Review` (movieId, userId, rating, comment, createdAt) — catalog_db.
+    Mỗi user chỉ đánh giá 1 lần/phim (unique constraint). API tại
+    `/api/v1/catalog/reviews` (không nằm dưới `/movies/**` để tránh bị
+    gateway coi là API quản trị movie cần quyền ADMIN).
 - [ ] Danh sách yêu thích / watchlist
   - → Entity cần thêm: `Favorite` (userId, movieId) — catalog_db
 - [ ] Gợi ý phim liên quan / phổ biến / sắp ra mắt
@@ -159,7 +162,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 28 | 40 |
+| 1 — MVP lõi | 29 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |
@@ -176,7 +179,7 @@
 | `RefreshToken` ✅ đã tạo | auth_db | userId, token, revoked, expiresAt | đăng xuất thật |
 | `PasswordResetToken` | auth_db | userId, token, expiresAt | quên mật khẩu |
 | `EmailVerificationToken` | auth_db | userId, token, expiresAt | xác minh email |
-| `Review` | catalog_db | movieId, userId, rating, comment | đánh giá phim |
+| `Review` ✅ đã tạo | catalog_db | movieId, userId, rating, comment | đánh giá phim |
 | `Favorite` | catalog_db | userId, movieId | watchlist |
 | `Ticket` | booking_db | bookingSeatId, qrCode, checkedInAt, checkedInBy | vé QR + check-in |
 | `RefundTransaction` | payment_db | paymentTransactionId, amount, reason, status | hoàn tiền |
