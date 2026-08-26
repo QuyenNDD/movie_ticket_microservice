@@ -12,8 +12,8 @@
 - [x] Đăng nhập (JWT access token + refresh token)
 - [x] Làm mới access token
 - [x] Xem thông tin cá nhân (`/me`)
-- [ ] Đăng xuất (thu hồi refresh token)
-  - → Entity cần thêm: `RefreshToken` (userId, token, revoked, expiresAt) — auth_db
+- [x] Đăng xuất (thu hồi refresh token)
+  - → Entity đã tạo: `RefreshToken` (userId, token, revoked, expiresAt) — auth_db
 - [ ] Quên mật khẩu / đặt lại mật khẩu qua email
   - → Entity cần thêm: `PasswordResetToken` (userId, token, expiresAt) — auth_db
 - [ ] Đổi mật khẩu
@@ -155,7 +155,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 24 | 40 |
+| 1 — MVP lõi | 25 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |
@@ -169,7 +169,7 @@
 
 | Entity | Service / DB | Field chính | Phục vụ tính năng |
 |---|---|---|---|
-| `RefreshToken` | auth_db | userId, token, revoked, expiresAt | đăng xuất thật |
+| `RefreshToken` ✅ đã tạo | auth_db | userId, token, revoked, expiresAt | đăng xuất thật |
 | `PasswordResetToken` | auth_db | userId, token, expiresAt | quên mật khẩu |
 | `EmailVerificationToken` | auth_db | userId, token, expiresAt | xác minh email |
 | `Review` | catalog_db | movieId, userId, rating, comment | đánh giá phim |

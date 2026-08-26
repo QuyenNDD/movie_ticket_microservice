@@ -11,6 +11,7 @@ public interface UserService {
     String registerUser(RegisterRequestDTO registerRequest);
     JwtResponseDTO authenticateUser(LoginRequestDTO loginRequest);
     JwtResponseDTO refreshAccessToken(TokenRefreshRequestDTO refreshRequest);
+    void logout(TokenRefreshRequestDTO logoutRequest);
     UserResponseDTO getMyProfile();
     UserInternalResponseDTO getInternalUserById(String userId);
 }

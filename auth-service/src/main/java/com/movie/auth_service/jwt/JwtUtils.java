@@ -35,10 +35,11 @@ public class JwtUtils {
                 .compact();
     }
 
-    public String generateRefreshJwt(String userName, String userId) {
+    public String generateRefreshJwt(String userName, String userId, String role) {
         return Jwts.builder()
                 .setSubject(userName)
                 .claim("userId", userId)
+                .claim("role", role)
                 .setIssuedAt(new Date())
                 .setExpiration(new Date((new Date()).getTime() + refreshExpiration))
                 .signWith(key(), SignatureAlgorithm.HS256)
@@ -58,6 +59,11 @@ public class JwtUtils {
     public String getRoleFromJwt(String token) {
         return Jwts.parserBuilder().setSigningKey(key()).build()
                 .parseClaimsJws(token).getBody().get("role", String.class);
+    }
+
+    public Date getExpirationDateFromJwt(String token) {
+        return Jwts.parserBuilder().setSigningKey(key()).build()
+                .parseClaimsJws(token).getBody().getExpiration();
     }
 
     public boolean validateJwt(String authToken) {

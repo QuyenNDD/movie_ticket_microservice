@@ -51,6 +51,13 @@ public class AuthController {
         return new ResponseEntity<>(response, HttpStatus.OK);
     }
 
+    // 5. ĐĂNG XUẤT (thu hồi refresh token)
+    @PostMapping("/logout")
+    public ResponseEntity<String> logout(@Valid @RequestBody TokenRefreshRequestDTO requestDTO) {
+        userService.logout(requestDTO);
+        return new ResponseEntity<>("Đăng xuất thành công!", HttpStatus.OK);
+    }
+
     @GetMapping("/internal/users/{userId}")
     public ResponseEntity<UserInternalResponseDTO> getInternalUserById(
             @RequestHeader("X-Internal-Secret") String internalSecretHeader,

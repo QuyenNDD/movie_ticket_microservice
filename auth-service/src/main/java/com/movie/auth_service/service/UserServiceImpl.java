@@ -6,8 +6,10 @@ import com.movie.auth_service.dto.request.TokenRefreshRequestDTO;
 import com.movie.auth_service.dto.response.JwtResponseDTO;
 import com.movie.auth_service.dto.response.UserInternalResponseDTO;
 import com.movie.auth_service.dto.response.UserResponseDTO;
+import com.movie.auth_service.entity.RefreshToken;
 import com.movie.auth_service.entity.User;
 import com.movie.auth_service.jwt.JwtUtils;
+import com.movie.auth_service.repository.RefreshTokenRepository;
 import com.movie.auth_service.repository.UserRepository;
 import com.movie.auth_service.security.CustomUserDetails;
 import org.modelmapper.ModelMapper;
@@ -20,10 +22,16 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+
 @Service
 public class UserServiceImpl implements UserService{
     @Autowired
     UserRepository userRepository;
+
+    @Autowired
+    RefreshTokenRepository refreshTokenRepository;
 
     @Autowired
     PasswordEncoder passwordEncoder;
@@ -74,7 +82,15 @@ public class UserServiceImpl implements UserService{
         // 4. Đúc bộ đôi Access Token và Refresh Token
         String roleClean = userDetails.getAuthorities().iterator().next().getAuthority().replace("ROLE_", "");
         String accessToken = jwtUtils.generateJwt(userDetails.getUsername(), userDetails.getId(), roleClean);
-        String refreshToken = jwtUtils.generateRefreshJwt(userDetails.getUsername(), userDetails.getId());
+        String refreshToken = jwtUtils.generateRefreshJwt(userDetails.getUsername(), userDetails.getId(), roleClean);
+
+        // 5. Lưu Refresh Token vào DB để có thể thu hồi khi đăng xuất
+        RefreshToken refreshTokenEntity = new RefreshToken();
+        refreshTokenEntity.setUserId(userDetails.getId());
+        refreshTokenEntity.setToken(refreshToken);
+        refreshTokenEntity.setRevoked(false);
+        refreshTokenEntity.setExpiresAt(toLocalDateTime(jwtUtils.getExpirationDateFromJwt(refreshToken)));
+        refreshTokenRepository.save(refreshTokenEntity);
 
         return new JwtResponseDTO(accessToken, refreshToken, userDetails.getId(), userDetails.getUsername(), roleClean);
     }
@@ -85,6 +101,13 @@ public class UserServiceImpl implements UserService{
 
         // Kiểm tra xem Refresh Token gửi lên có hợp lệ và còn hạn không
         if (refreshToken != null && jwtUtils.validateJwt(refreshToken)) {
+            RefreshToken storedToken = refreshTokenRepository.findByToken(refreshToken)
+                    .orElseThrow(() -> new RuntimeException("Refresh token không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại!"));
+
+            if (storedToken.isRevoked()) {
+                throw new RuntimeException("Refresh token đã bị thu hồi. Vui lòng đăng nhập lại!");
+            }
+
             String username = jwtUtils.getUserNameFromJwt(refreshToken);
             String userId = jwtUtils.getUserIdFromJwt(refreshToken);
             String role = jwtUtils.getRoleFromJwt(refreshToken);
@@ -96,6 +119,19 @@ public class UserServiceImpl implements UserService{
         }
 
         throw new RuntimeException("Refresh token không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại!");
+    }
+
+    @Override
+    public void logout(TokenRefreshRequestDTO logoutRequest) {
+        refreshTokenRepository.findByToken(logoutRequest.getRefreshToken())
+                .ifPresent(storedToken -> {
+                    storedToken.setRevoked(true);
+                    refreshTokenRepository.save(storedToken);
+                });
+    }
+
+    private LocalDateTime toLocalDateTime(java.util.Date date) {
+        return date.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
     }
 
     @Override
