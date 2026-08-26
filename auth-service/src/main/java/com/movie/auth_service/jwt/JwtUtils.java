@@ -36,10 +36,13 @@ public class JwtUtils {
     }
 
     public String generateRefreshJwt(String userName, String userId, String role) {
+        // claim "jti" đảm bảo token luôn khác nhau dù 2 lần login trùng giây
+        // (JWT ký deterministic: cùng input -> cùng chữ ký, mà token lại lưu DB với unique constraint)
         return Jwts.builder()
                 .setSubject(userName)
                 .claim("userId", userId)
                 .claim("role", role)
+                .setId(java.util.UUID.randomUUID().toString())
                 .setIssuedAt(new Date())
                 .setExpiration(new Date((new Date()).getTime() + refreshExpiration))
                 .signWith(key(), SignatureAlgorithm.HS256)

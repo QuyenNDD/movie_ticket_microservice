@@ -1,5 +1,6 @@
 package com.movie.auth_service.controller;
 
+import com.movie.auth_service.dto.request.ChangePasswordRequestDTO;
 import com.movie.auth_service.dto.request.ForgotPasswordRequestDTO;
 import com.movie.auth_service.dto.request.LoginRequestDTO;
 import com.movie.auth_service.dto.request.RegisterRequestDTO;
@@ -75,6 +76,13 @@ public class AuthController {
     public ResponseEntity<String> resetPassword(@Valid @RequestBody ResetPasswordRequestDTO requestDTO) {
         userService.resetPassword(requestDTO);
         return new ResponseEntity<>("Đặt lại mật khẩu thành công!", HttpStatus.OK);
+    }
+
+    // 8. ĐỔI MẬT KHẨU (khi đã đăng nhập, cần mật khẩu hiện tại)
+    @PostMapping("/change-password")
+    public ResponseEntity<String> changePassword(@Valid @RequestBody ChangePasswordRequestDTO requestDTO) {
+        userService.changePassword(requestDTO);
+        return new ResponseEntity<>("Đổi mật khẩu thành công!", HttpStatus.OK);
     }
 
     @GetMapping("/internal/users/{userId}")

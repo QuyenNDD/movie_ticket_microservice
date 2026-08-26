@@ -1,5 +1,6 @@
 package com.movie.auth_service.service;
 
+import com.movie.auth_service.dto.request.ChangePasswordRequestDTO;
 import com.movie.auth_service.dto.request.ForgotPasswordRequestDTO;
 import com.movie.auth_service.dto.request.LoginRequestDTO;
 import com.movie.auth_service.dto.request.RegisterRequestDTO;
@@ -230,14 +231,34 @@ public class UserServiceImpl implements UserService{
 
     @Override
     public UserResponseDTO getMyProfile() {
-        // Lấy thông tin user hiện tại từ bộ nhớ SecurityContextHolder (do AuthTokenFilter gán vào trước đó)
+        User user = getCurrentAuthenticatedUser();
+        return modelMapper.map(user, UserResponseDTO.class);
+    }
+
+    @Override
+    public void changePassword(ChangePasswordRequestDTO changePasswordRequest) {
+        User user = getCurrentAuthenticatedUser();
+
+        if (!passwordEncoder.matches(changePasswordRequest.getCurrentPassword(), user.getPassword())) {
+            throw new RuntimeException("Mật khẩu hiện tại không chính xác!");
+        }
+
+        user.setPassword(passwordEncoder.encode(changePasswordRequest.getNewPassword()));
+        userRepository.save(user);
+
+        // Thu hồi mọi refresh token đang hoạt động để buộc đăng nhập lại trên mọi thiết bị
+        var activeTokens = refreshTokenRepository.findByUserIdAndRevokedFalse(user.getId());
+        activeTokens.forEach(rt -> rt.setRevoked(true));
+        refreshTokenRepository.saveAll(activeTokens);
+    }
+
+    // Lấy thông tin user hiện tại từ bộ nhớ SecurityContextHolder (do AuthTokenFilter gán vào trước đó)
+    private User getCurrentAuthenticatedUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
 
-        User user = userRepository.findById(userDetails.getId())
+        return userRepository.findById(userDetails.getId())
                 .orElseThrow(() -> new UsernameNotFoundException("Không tìm thấy thông tin người dùng"));
-
-        return modelMapper.map(user, UserResponseDTO.class);
     }
 
     @Override

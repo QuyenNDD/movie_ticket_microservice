@@ -1,5 +1,6 @@
 package com.movie.auth_service.service;
 
+import com.movie.auth_service.dto.request.ChangePasswordRequestDTO;
 import com.movie.auth_service.dto.request.ForgotPasswordRequestDTO;
 import com.movie.auth_service.dto.request.LoginRequestDTO;
 import com.movie.auth_service.dto.request.RegisterRequestDTO;
@@ -16,6 +17,7 @@ public interface UserService {
     void logout(TokenRefreshRequestDTO logoutRequest);
     void forgotPassword(ForgotPasswordRequestDTO forgotPasswordRequest);
     void resetPassword(ResetPasswordRequestDTO resetPasswordRequest);
+    void changePassword(ChangePasswordRequestDTO changePasswordRequest);
     UserResponseDTO getMyProfile();
     UserInternalResponseDTO getInternalUserById(String userId);
 }
