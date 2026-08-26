@@ -359,9 +359,15 @@ public class BookingServiceImpl implements BookingService{
             throw new RuntimeException("Lỗi bảo mật: Bạn không có quyền thanh toán hóa đơn của người khác!");
         }
 
-        // Chống thanh toán đúp
+        // Chống thanh toán đúp — idempotent: nếu đã PAID rồi (vd. message confirm bị gửi lại qua RabbitMQ)
+        // thì coi như thành công, không xử lý lại side-effect và không báo lỗi.
         if ("PAID".equalsIgnoreCase(booking.getStatus())) {
-            throw new RuntimeException("Hóa đơn này đã được thanh toán trước đó, không thể thanh toán lại!");
+            return BookingResponseDTO.builder()
+                    .bookingId(booking.getId())
+                    .status("PAID")
+                    .message("Hóa đơn này đã được thanh toán trước đó.")
+                    .totalPrice(booking.getTotalPrice())
+                    .build();
         }
 
         // Chặn thanh toán booking đã hủy

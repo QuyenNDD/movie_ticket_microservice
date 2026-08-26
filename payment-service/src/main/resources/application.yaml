@@ -29,6 +29,16 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USERNAME:guest}
     password: ${RABBITMQ_PASSWORD:guest}
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 2000
+          multiplier: 2
+          max-interval: 10000
 
 momo:
   partner-code: ${MOMO_PARTNER_CODE}
@@ -41,12 +51,19 @@ momo:
 app:
   gateway-secret: ${GATEWAY_SECRET:a3f8c9e1d2b5f6a0b9d8e4f7c3a2b1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b7a2}
   internal-secret: ${INTERNAL_SECRET:8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c}
-  auth-service-url: ${AUTH_SERVICE_URL:http://localhost:8083}
+  auth-service-url: ${AUTH_SERVICE_URL:http://localhost:8083/api/v1/auth}
   notification-service-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8085}
   payment-retry:
     fixed-delay-ms: ${PAYMENT_RETRY_FIXED_DELAY_MS:60000}
     max-retry-count: ${PAYMENT_RETRY_MAX_COUNT:10}
+  rest-client:
+    connect-timeout-ms: ${REST_CLIENT_CONNECT_TIMEOUT_MS:3000}
+    read-timeout-ms: ${REST_CLIENT_READ_TIMEOUT_MS:5000}
   rabbitmq:
     exchange: movie.ticket.exchange
     booking-paid-queue: notification.booking.paid.queue
     booking-paid-routing-key: notification.booking.paid
+    booking-confirm-request-queue: booking.confirm.request.queue
+    booking-confirm-request-routing-key: booking.confirm.request
+    booking-confirm-result-queue: payment.booking.confirm.result.queue
+    booking-confirm-result-routing-key: payment.booking.confirm.result

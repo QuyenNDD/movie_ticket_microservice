@@ -1,6 +1,5 @@
-package com.movie.payment_service.config;
+package com.movie.booking_service.config;
 
-import jakarta.annotation.PostConstruct;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
@@ -20,12 +19,6 @@ public class RabbitMQConfig {
     @Value("${app.rabbitmq.exchange}")
     private String exchangeName;
 
-    @Value("${app.rabbitmq.booking-paid-queue}")
-    private String bookingPaidQueue;
-
-    @Value("${app.rabbitmq.booking-paid-routing-key}")
-    private String bookingPaidRoutingKey;
-
     @Value("${app.rabbitmq.booking-confirm-request-queue}")
     private String bookingConfirmRequestQueue;
 
@@ -38,30 +31,9 @@ public class RabbitMQConfig {
     @Value("${app.rabbitmq.booking-confirm-result-routing-key}")
     private String bookingConfirmResultRoutingKey;
 
-    @PostConstruct
-    public void init() {
-        System.out.println(">>> RabbitMQConfig loaded successfully");
-    }
-
     @Bean
     public DirectExchange movieTicketExchange() {
-        System.out.println(">>> Creating RabbitMQ exchange: " + exchangeName);
         return new DirectExchange(exchangeName, true, false);
-    }
-
-    @Bean
-    public Queue bookingPaidQueue() {
-        System.out.println(">>> Creating RabbitMQ queue: " + bookingPaidQueue);
-        return new Queue(bookingPaidQueue, true);
-    }
-
-    @Bean
-    public Binding bookingPaidBinding() {
-        System.out.println(">>> Creating RabbitMQ binding: " + bookingPaidRoutingKey);
-        return BindingBuilder
-                .bind(bookingPaidQueue())
-                .to(movieTicketExchange())
-                .with(bookingPaidRoutingKey);
     }
 
     @Bean
@@ -104,11 +76,7 @@ public class RabbitMQConfig {
 
     @Bean
     public ApplicationRunner rabbitAdminInitializer(RabbitAdmin rabbitAdmin) {
-        return args -> {
-            System.out.println(">>> Forcing RabbitMQ declare exchange/queue/binding...");
-            rabbitAdmin.initialize();
-            System.out.println(">>> RabbitMQ declare completed.");
-        };
+        return args -> rabbitAdmin.initialize();
     }
 
     @Bean

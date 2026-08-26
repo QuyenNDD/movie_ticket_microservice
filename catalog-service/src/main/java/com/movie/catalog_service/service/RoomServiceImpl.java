@@ -42,6 +42,8 @@ public class RoomServiceImpl implements RoomService{
     ModelMapper modelMapper;
     @Autowired
     ShowtimeRepository showtimeRepository;
+    @Autowired
+    RestTemplate restTemplate;
 
     private static final String BOOKING_SERVICE_BASE_URL = "http://localhost:8082/api/v1/booking";
 
@@ -62,8 +64,6 @@ public class RoomServiceImpl implements RoomService{
         if (showtimeIds == null || showtimeIds.isEmpty()) {
             return false;
         }
-
-        RestTemplate restTemplate = new RestTemplate();
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-Internal-Secret", internalSecret);

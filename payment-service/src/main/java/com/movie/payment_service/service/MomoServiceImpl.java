@@ -1,9 +1,12 @@
 package com.movie.payment_service.service;
 
+import com.movie.payment_service.dto.BookingConfirmRequestEvent;
+import com.movie.payment_service.dto.BookingConfirmResultEvent;
 import com.movie.payment_service.dto.BookingPaidEmailEvent;
 import com.movie.payment_service.dto.MoMoIpnDTO;
 import com.movie.payment_service.entity.PaymentStatus;
 import com.movie.payment_service.entity.PaymentTransaction;
+import com.movie.payment_service.publisher.BookingConfirmRequestPublisher;
 import com.movie.payment_service.publisher.BookingPaidEmailPublisher;
 import com.movie.payment_service.repository.PaymentTransactionRepository;
 import com.movie.payment_service.util.HmacSHA256Util;
@@ -60,6 +63,12 @@ public class MomoServiceImpl implements MomoService {
 
     @Autowired
     private BookingPaidEmailPublisher bookingPaidEmailPublisher;
+
+    @Autowired
+    private BookingConfirmRequestPublisher bookingConfirmRequestPublisher;
+
+    @Autowired
+    private RestTemplate restTemplate;
 
     private static final long MOMO_QR_TTL_MINUTES = 10;
 
@@ -183,7 +192,6 @@ public class MomoServiceImpl implements MomoService {
 
         HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
-        RestTemplate restTemplate = new RestTemplate();
         Map<String, Object> response = restTemplate.postForObject(endpoint, requestEntity, Map.class);
 
         if (response == null || !response.containsKey("payUrl")) {
@@ -490,8 +498,6 @@ public class MomoServiceImpl implements MomoService {
     }
 
     private Map<String, Object> getBookingDetail(String userId, String bookingId) {
-        RestTemplate restTemplate = new RestTemplate();
-
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-User-Id", userId);
         headers.set("X-Internal-Secret", internalSecret);
@@ -506,25 +512,6 @@ public class MomoServiceImpl implements MomoService {
         );
 
         return response.getBody();
-    }
-
-    private void callBookingConfirm(String userId, String bookingId) {
-        RestTemplate restTemplate = new RestTemplate();
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("X-User-Id", userId);
-        headers.set("X-Internal-Secret", internalSecret);
-
-        HttpEntity<String> entity = new HttpEntity<>(null, headers);
-
-        String bookingServiceUrl = BOOKING_SERVICE_BASE_URL + "/" + bookingId + "/confirm";
-
-        restTemplate.exchange(
-                bookingServiceUrl,
-                HttpMethod.PUT,
-                entity,
-                String.class
-        );
     }
 
     private void validateBookingCanCreatePayment(Map<String, Object> bookingDetail) {
@@ -585,55 +572,103 @@ public class MomoServiceImpl implements MomoService {
 
         return new String(Base64.getDecoder().decode(extraData), StandardCharsets.UTF_8);
     }
+    /**
+     * Gửi yêu cầu confirm booking qua RabbitMQ (không đợi phản hồi đồng bộ).
+     * Chủ động đặt sẵn retryCount/nextRetryAt ngay khi gửi, vì kết quả thật sự
+     * (thành công hay thất bại) sẽ được báo về sau qua {@link #handleBookingConfirmResult}.
+     * Nếu booking-service không phản hồi kịp (mất message, service down...),
+     * PaymentConfirmRetryJob sẽ tự gửi lại yêu cầu khi tới nextRetryAt.
+     */
     public void confirmBookingAndMarkSuccess(PaymentTransaction payment) {
-        try {
-            callBookingConfirm(payment.getUserId(), payment.getBookingId());
+        int currentRetry = payment.getRetryCount() == null ? 0 : payment.getRetryCount();
+        int nextRetry = currentRetry + 1;
 
-            payment.setStatus(PaymentStatus.SUCCESS);
-            payment.setLastError(null);
+        if (nextRetry >= maxRetryCount) {
+            payment.setRetryCount(nextRetry);
+            payment.setStatus(PaymentStatus.PAYMENT_REVIEW);
             payment.setNextRetryAt(null);
-
-            if (payment.getPaidAt() == null) {
-                payment.setPaidAt(LocalDateTime.now());
-            }
-
+            payment.setLastError("MoMo đã thanh toán nhưng confirm booking quá số lần thử. Chuyển sang review thủ công.");
             paymentTransactionRepository.save(payment);
+            return;
+        }
 
-            sendBookingPaidEmailIfNeeded(payment);
+        payment.setRetryCount(nextRetry);
+        payment.setStatus(PaymentStatus.CONFIRM_PENDING);
+        payment.setNextRetryAt(LocalDateTime.now().plusMinutes(calculateBackoffMinutes(nextRetry)));
+        paymentTransactionRepository.save(payment);
 
-            System.out.println(">>> [THÀNH CÔNG] Đã confirm booking "
+        try {
+            bookingConfirmRequestPublisher.publish(
+                    BookingConfirmRequestEvent.builder()
+                            .paymentId(payment.getId())
+                            .bookingId(payment.getBookingId())
+                            .userId(payment.getUserId())
+                            .build()
+            );
+
+            System.out.println(">>> [ĐÃ GỬI] Yêu cầu confirm booking "
                     + payment.getBookingId()
                     + " cho user "
                     + payment.getUserId());
 
         } catch (Exception ex) {
-            int currentRetry = payment.getRetryCount() == null ? 0 : payment.getRetryCount();
-            int nextRetry = currentRetry + 1;
-
-            payment.setRetryCount(nextRetry);
-            payment.setStatus(PaymentStatus.CONFIRM_PENDING);
-            payment.setLastError(ex.getMessage());
-
-            if (nextRetry >= maxRetryCount) {
-                payment.setStatus(PaymentStatus.PAYMENT_REVIEW);
-                payment.setNextRetryAt(null);
-                payment.setLastError("MoMo đã thanh toán nhưng confirm booking lỗi quá số lần retry. Error: "
-                        + ex.getMessage());
-            } else {
-                payment.setStatus(PaymentStatus.CONFIRM_PENDING);
-                payment.setNextRetryAt(LocalDateTime.now().plusMinutes(calculateBackoffMinutes(nextRetry)));
-                payment.setLastError(ex.getMessage());
-            }
-
+            payment.setLastError("Không gửi được yêu cầu confirm booking qua RabbitMQ: " + ex.getMessage());
             paymentTransactionRepository.save(payment);
 
-            System.err.println(">>> [CẦN RETRY] MoMo đã thanh toán nhưng confirm booking lỗi. bookingId="
+            System.err.println(">>> [LỖI GỬI] Không publish được yêu cầu confirm booking. bookingId="
                     + payment.getBookingId()
-                    + ", retryCount="
-                    + nextRetry
                     + ", error="
                     + ex.getMessage());
         }
+    }
+
+    /**
+     * Nhận kết quả confirm booking từ booking-service qua RabbitMQ.
+     * Chỉ khi nhận được success=true ở đây thì payment mới được đánh dấu SUCCESS.
+     */
+    @Transactional
+    public void handleBookingConfirmResult(BookingConfirmResultEvent event) {
+        PaymentTransaction payment = paymentTransactionRepository
+                .findById(event.getPaymentId())
+                .orElse(null);
+
+        if (payment == null) {
+            System.err.println(">>> Nhận kết quả confirm booking nhưng không tìm thấy payment. paymentId="
+                    + event.getPaymentId());
+            return;
+        }
+
+        if (PaymentStatus.SUCCESS.equals(payment.getStatus())) {
+            return;
+        }
+
+        if (!event.isSuccess()) {
+            payment.setLastError(event.getErrorMessage());
+            paymentTransactionRepository.save(payment);
+
+            System.err.println(">>> [CẦN RETRY] Booking-service báo confirm thất bại. bookingId="
+                    + payment.getBookingId()
+                    + ", error="
+                    + event.getErrorMessage());
+            return;
+        }
+
+        payment.setStatus(PaymentStatus.SUCCESS);
+        payment.setLastError(null);
+        payment.setNextRetryAt(null);
+
+        if (payment.getPaidAt() == null) {
+            payment.setPaidAt(LocalDateTime.now());
+        }
+
+        paymentTransactionRepository.save(payment);
+
+        sendBookingPaidEmailIfNeeded(payment);
+
+        System.out.println(">>> [THÀNH CÔNG] Đã confirm booking "
+                + payment.getBookingId()
+                + " cho user "
+                + payment.getUserId());
     }
 
     private long calculateBackoffMinutes(int retryCount) {
@@ -837,7 +872,6 @@ public class MomoServiceImpl implements MomoService {
         headers.set("X-Internal-Secret", internalSecret);
 
         HttpEntity<Void> entity = new HttpEntity<>(headers);
-        RestTemplate restTemplate = new RestTemplate();
         ResponseEntity<Map> response = restTemplate.exchange(
                 url,
                 HttpMethod.GET,
