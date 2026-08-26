@@ -1,6 +1,7 @@
 package com.movie.notification_service.controller;
 
 import com.movie.notification_service.dto.BookingPaidEmailRequest;
+import com.movie.notification_service.dto.EmailVerificationRequest;
 import com.movie.notification_service.dto.PasswordResetEmailRequest;
 import com.movie.notification_service.service.EmailService;
 import jakarta.validation.Valid;
@@ -38,6 +39,17 @@ public class NotificationController {
 
         return ResponseEntity.ok(Map.of(
                 "message", "Email đặt lại mật khẩu đã được gửi"
+        ));
+    }
+
+    @PostMapping("/internal/email-verification")
+    public ResponseEntity<Map<String, String>> sendEmailVerification(
+            @Valid @RequestBody EmailVerificationRequest request
+    ) {
+        emailService.sendEmailVerification(request);
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Email xác minh đã được gửi"
         ));
     }
 }

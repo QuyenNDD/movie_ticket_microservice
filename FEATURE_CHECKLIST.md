@@ -18,8 +18,12 @@
   - → Entity đã tạo: `PasswordResetToken` (userId, token, used, expiresAt) — auth_db
 - [x] Đổi mật khẩu
   - → không cần entity mới, dùng lại `User`
-- [ ] Xác minh email khi đăng ký
-  - → Entity cần thêm: `EmailVerificationToken` (userId, token, expiresAt) — auth_db
+- [x] Xác minh email khi đăng ký
+  - → Entity đã tạo: `EmailVerificationToken` (userId, token, expiresAt) — auth_db.
+    Chỉ theo dõi trạng thái (`User.emailVerified`), **không chặn login** khi
+    chưa xác minh — quyết định có chủ đích để không phá vỡ user cũ trong DB
+    (mặc định `emailVerified=false` khi thêm cột). Có thể siết chặn sau khi
+    backfill dữ liệu cũ nếu cần.
 - [ ] Đăng nhập qua mạng xã hội (Google/Facebook)
   - → Entity cần thêm: `SocialAccount` (provider, providerUserId, userId) — auth_db
 
@@ -155,7 +159,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 27 | 40 |
+| 1 — MVP lõi | 28 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |

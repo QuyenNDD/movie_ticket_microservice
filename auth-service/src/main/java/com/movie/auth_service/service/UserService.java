@@ -18,6 +18,7 @@ public interface UserService {
     void forgotPassword(ForgotPasswordRequestDTO forgotPasswordRequest);
     void resetPassword(ResetPasswordRequestDTO resetPasswordRequest);
     void changePassword(ChangePasswordRequestDTO changePasswordRequest);
+    void verifyEmail(String token);
     UserResponseDTO getMyProfile();
     UserInternalResponseDTO getInternalUserById(String userId);
 }

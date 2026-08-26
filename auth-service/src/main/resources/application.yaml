@@ -31,6 +31,8 @@ app:
   notification-service-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8085}
   password-reset-expiration-ms: ${PASSWORD_RESET_EXPIRATION_MS:900000}
   password-reset-url: ${PASSWORD_RESET_URL:http://localhost:5173/reset-password}
+  email-verification-expiration-ms: ${EMAIL_VERIFICATION_EXPIRATION_MS:86400000}
+  email-verification-url: ${EMAIL_VERIFICATION_URL:http://localhost:5173/verify-email}
   rest-client:
     connect-timeout-ms: ${REST_CLIENT_CONNECT_TIMEOUT_MS:3000}
     read-timeout-ms: ${REST_CLIENT_READ_TIMEOUT_MS:5000}

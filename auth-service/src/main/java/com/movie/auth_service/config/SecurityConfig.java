@@ -69,6 +69,7 @@ public class SecurityConfig {
                                         "/api/v1/auth/logout",
                                         "/api/v1/auth/forgot-password",
                                         "/api/v1/auth/reset-password",
+                                        "/api/v1/auth/verify-email",
                                         "/api/v1/auth/internal/users/**"
                                 ).permitAll()
                                 .anyRequest().authenticated() // Bất kỳ API nào khác đều phải có JWT

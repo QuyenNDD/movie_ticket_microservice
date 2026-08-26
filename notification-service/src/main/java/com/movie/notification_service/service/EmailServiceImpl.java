@@ -2,6 +2,7 @@ package com.movie.notification_service.service;
 
 import com.movie.notification_service.dto.BookingPaidEmailEvent;
 import com.movie.notification_service.dto.BookingPaidEmailRequest;
+import com.movie.notification_service.dto.EmailVerificationRequest;
 import com.movie.notification_service.dto.PasswordResetEmailRequest;
 import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Value;
@@ -130,6 +131,43 @@ public class EmailServiceImpl implements EmailService {
                 <p>Liên kết sẽ hết hạn sau một thời gian ngắn. Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.</p>
             </div>
             """.formatted(request.getResetLink());
+    }
+
+    @Override
+    public void sendEmailVerification(EmailVerificationRequest request) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setFrom(fromEmail);
+            helper.setTo(request.getToEmail());
+            helper.setSubject("Xác minh địa chỉ email của bạn");
+            helper.setText(buildEmailVerificationHtmlContent(request), true);
+
+            mailSender.send(message);
+
+            System.out.println(">>> Đã gửi email xác minh tới: " + request.getToEmail());
+
+        } catch (Exception e) {
+            throw new RuntimeException("Gửi email xác minh thất bại: " + e.getMessage(), e);
+        }
+    }
+
+    private String buildEmailVerificationHtmlContent(EmailVerificationRequest request) {
+        return """
+            <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+                <h2>Xác minh địa chỉ email</h2>
+
+                <p>Xin chào,</p>
+
+                <p>Cảm ơn bạn đã đăng ký tài khoản. Nhấn vào liên kết bên dưới để xác minh địa chỉ email của bạn:</p>
+
+                <p><a href="%s" style="display:inline-block;padding:10px 20px;background:#e50914;color:#fff;text-decoration:none;border-radius:4px;">Xác minh email</a></p>
+
+                <p>Nếu bạn không thực hiện đăng ký này, vui lòng bỏ qua email này.</p>
+            </div>
+            """.formatted(request.getVerifyLink());
     }
 
     private String buildHtmlContent(BookingPaidEmailRequest request) {

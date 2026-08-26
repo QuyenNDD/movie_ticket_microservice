@@ -29,6 +29,9 @@ public class User {
     @Column(nullable = false)
     private String role;
 
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified;
+
     @PrePersist
     public void prePersist() {
         if (this.id ==  null){

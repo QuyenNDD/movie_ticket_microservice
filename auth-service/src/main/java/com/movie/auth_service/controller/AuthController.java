@@ -85,6 +85,13 @@ public class AuthController {
         return new ResponseEntity<>("Đổi mật khẩu thành công!", HttpStatus.OK);
     }
 
+    // 9. XÁC MINH EMAIL (dùng token nhận được qua email khi đăng ký)
+    @GetMapping("/verify-email")
+    public ResponseEntity<String> verifyEmail(@RequestParam String token) {
+        userService.verifyEmail(token);
+        return new ResponseEntity<>("Xác minh email thành công!", HttpStatus.OK);
+    }
+
     @GetMapping("/internal/users/{userId}")
     public ResponseEntity<UserInternalResponseDTO> getInternalUserById(
             @RequestHeader("X-Internal-Secret") String internalSecretHeader,

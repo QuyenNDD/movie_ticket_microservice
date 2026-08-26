@@ -9,10 +9,12 @@ import com.movie.auth_service.dto.request.TokenRefreshRequestDTO;
 import com.movie.auth_service.dto.response.JwtResponseDTO;
 import com.movie.auth_service.dto.response.UserInternalResponseDTO;
 import com.movie.auth_service.dto.response.UserResponseDTO;
+import com.movie.auth_service.entity.EmailVerificationToken;
 import com.movie.auth_service.entity.PasswordResetToken;
 import com.movie.auth_service.entity.RefreshToken;
 import com.movie.auth_service.entity.User;
 import com.movie.auth_service.jwt.JwtUtils;
+import com.movie.auth_service.repository.EmailVerificationTokenRepository;
 import com.movie.auth_service.repository.PasswordResetTokenRepository;
 import com.movie.auth_service.repository.RefreshTokenRepository;
 import com.movie.auth_service.repository.UserRepository;
@@ -49,6 +51,9 @@ public class UserServiceImpl implements UserService{
     PasswordResetTokenRepository passwordResetTokenRepository;
 
     @Autowired
+    EmailVerificationTokenRepository emailVerificationTokenRepository;
+
+    @Autowired
     PasswordEncoder passwordEncoder;
 
     @Autowired
@@ -75,6 +80,12 @@ public class UserServiceImpl implements UserService{
     @Value("${app.password-reset-url:http://localhost:5173/reset-password}")
     private String passwordResetUrl;
 
+    @Value("${app.email-verification-expiration-ms:86400000}")
+    private long emailVerificationExpirationMs;
+
+    @Value("${app.email-verification-url:http://localhost:5173/verify-email}")
+    private String emailVerificationUrl;
+
     @Override
     public String registerUser(RegisterRequestDTO registerRequest) {
         // 1. Kiểm tra trùng lặp trùng Username hoặc Email
@@ -91,8 +102,24 @@ public class UserServiceImpl implements UserService{
         user.setEmail(registerRequest.getEmail());
         user.setPassword(passwordEncoder.encode(registerRequest.getPassword())); // BĂM MẬT KHẨU
         user.setRole("USER");
+        user.setEmailVerified(false);
 
         userRepository.save(user);
+
+        EmailVerificationToken verificationToken = new EmailVerificationToken();
+        verificationToken.setUserId(user.getId());
+        verificationToken.setToken(UUID.randomUUID().toString());
+        verificationToken.setExpiresAt(LocalDateTime.now().plus(java.time.Duration.ofMillis(emailVerificationExpirationMs)));
+        emailVerificationTokenRepository.save(verificationToken);
+
+        String verifyLink = emailVerificationUrl + "?token=" + verificationToken.getToken();
+        try {
+            sendEmailVerification(user.getEmail(), verifyLink);
+        } catch (Exception ex) {
+            // Không để lỗi gửi mail chặn đăng ký; user vẫn tạo được, có thể xác minh sau.
+            System.err.println(">>> Gửi email xác minh thất bại: " + ex.getMessage());
+        }
+
         return "Đăng ký người dùng thành công!";
     }
 
@@ -215,15 +242,47 @@ public class UserServiceImpl implements UserService{
     }
 
     private void sendPasswordResetEmail(String toEmail, String resetLink) {
-        String url = notificationServiceUrl + "/api/v1/notifications/internal/password-reset";
+        Map<String, String> body = new HashMap<>();
+        body.put("toEmail", toEmail);
+        body.put("resetLink", resetLink);
+
+        postInternalNotification("/api/v1/notifications/internal/password-reset", body);
+    }
+
+    @Override
+    public void verifyEmail(String token) {
+        EmailVerificationToken verificationToken = emailVerificationTokenRepository.findByToken(token)
+                .orElseThrow(() -> new RuntimeException("Token xác minh email không hợp lệ!"));
+
+        if (verificationToken.getExpiresAt().isBefore(LocalDateTime.now())) {
+            emailVerificationTokenRepository.delete(verificationToken);
+            throw new RuntimeException("Token xác minh email đã hết hạn. Vui lòng yêu cầu gửi lại!");
+        }
+
+        User user = userRepository.findById(verificationToken.getUserId())
+                .orElseThrow(() -> new UsernameNotFoundException("Không tìm thấy thông tin người dùng"));
+
+        user.setEmailVerified(true);
+        userRepository.save(user);
+
+        // Xóa token sau khi dùng để chống dùng lại (thay vì thêm field "used" như PasswordResetToken)
+        emailVerificationTokenRepository.delete(verificationToken);
+    }
+
+    private void sendEmailVerification(String toEmail, String verifyLink) {
+        Map<String, String> body = new HashMap<>();
+        body.put("toEmail", toEmail);
+        body.put("verifyLink", verifyLink);
+
+        postInternalNotification("/api/v1/notifications/internal/email-verification", body);
+    }
+
+    private void postInternalNotification(String path, Map<String, String> body) {
+        String url = notificationServiceUrl + path;
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-Internal-Secret", internalSecret);
         headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
-
-        Map<String, String> body = new HashMap<>();
-        body.put("toEmail", toEmail);
-        body.put("resetLink", resetLink);
 
         HttpEntity<Map<String, String>> entity = new HttpEntity<>(body, headers);
         restTemplate.postForEntity(url, entity, String.class);
