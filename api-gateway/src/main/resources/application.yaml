@@ -57,6 +57,13 @@ spring:
           filters:
             - AuthenticationFilter
 
+        - id: notification-service
+          uri: ${NOTIFICATION_SERVICE_URL:http://host.docker.internal:8085}
+          predicates:
+            - Path=/api/v1/notifications/**
+          filters:
+            - AuthenticationFilter
+
   movie:
     jwt:
       secret: ${JWT_SECRET:VmVyeVNlY3JldEtleUZvckp3dEF1dGhlbnRpY2F0aW9uU3ByaW5nQm9vdEFwcGxpY2F0aW9u}

@@ -15,6 +15,7 @@ import java.util.List;
 public class BookingPaidEmailEvent {
 
     private String toEmail;
+    private String userId;
     private String bookingId;
     private Long amount;
     private LocalDateTime paidAt;

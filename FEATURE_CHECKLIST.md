@@ -113,8 +113,16 @@
 
 ### 1.5 Thông báo
 - [x] Gửi email xác nhận vé sau khi thanh toán thành công
-- [ ] Thông báo trong ứng dụng (in-app notification)
-  - → notification-service hiện **chưa có DB** — cần thêm schema `notification_db` + Entity `Notification` (userId, title, content, type, isRead, createdAt)
+- [x] Thông báo trong ứng dụng (in-app notification)
+  - → notification-service đã có DB: thêm `spring-boot-starter-data-jpa` + `mysql-connector-j`
+    vào pom.xml, schema `notification_db` mới. Entity `Notification` (userId, title, content,
+    type, isRead, createdAt). API cho user: `GET /api/v1/notifications/my-notifications`,
+    `GET /api/v1/notifications/unread-count`, `PATCH /api/v1/notifications/{id}/read` (qua
+    gateway, route mới `/api/v1/notifications/**`). API nội bộ `POST /internal/create`
+    (X-Internal-Secret) để service khác tạo thông báo. Đã nối vào sự kiện thanh toán thành
+    công có sẵn (`BookingPaidEmailEvent` qua RabbitMQ, thêm field `userId`): khi gửi mail xác
+    nhận vé, tạo luôn 1 thông báo in-app tương ứng — lỗi tạo thông báo không làm retry gửi
+    lại mail. Bổ sung `GlobalExceptionHandler` còn thiếu ở notification-service.
 - [ ] Nhắc lịch trước giờ chiếu (email/push)
   - → Entity cần thêm: `NotificationTemplate` — notification_db
 - [ ] Push notification (mobile/web push)
@@ -195,7 +203,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 37 | 40 |
+| 1 — MVP lõi | 38 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |
@@ -216,6 +224,6 @@
 | `Favorite` ✅ đã tạo | catalog_db | userId, movieId | watchlist |
 | `Ticket` ✅ đã tạo | booking_db | bookingSeatId, qrCode, checkedInAt, checkedInBy | vé QR + check-in |
 | `RefundTransaction` ✅ đã tạo | payment_db | paymentTransactionId, amount, reason, status | hoàn tiền |
-| `Notification` | notification_db (**mới**) | userId, title, content, type, isRead, createdAt | thông báo trong app |
+| `Notification` ✅ đã tạo | notification_db (**mới**) | userId, title, content, type, isRead, createdAt | thông báo trong app |
 
-Ghi chú: `notification-service` hiện chưa có database nào — cần khởi tạo schema `notification_db` trước khi thêm entity `Notification`/`NotificationTemplate`.
+Ghi chú: `notification-service` đã có schema `notification_db` (entity `Notification` ✅) — vẫn cần thêm `NotificationTemplate` riêng khi làm "nhắc lịch trước giờ chiếu" / "email khuyến mãi".

@@ -22,6 +22,21 @@ spring:
           multiplier: 2
           max-interval: 10000
 
+  datasource:
+    url: ${NOTIFICATION_DB_URL}
+    username: ${NOTIFICATION_DB_USERNAME}
+    password: ${NOTIFICATION_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: ${JPA_SHOW_SQL:true}
+    properties:
+      hibernate:
+        format-sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
@@ -35,6 +50,7 @@ spring:
             enable: true
 
 app:
+  gateway-secret: ${GATEWAY_SECRET:a3f8c9e1d2b5f6a0b9d8e4f7c3a2b1e0d9c8b7a6f5e4d3c2b1a0f9e8d7c6b7a2}
   internal-secret: ${INTERNAL_SECRET:8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c}
   mail:
     from: ${MAIL_FROM:${MAIL_USERNAME}}

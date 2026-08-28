@@ -13,12 +13,15 @@ import java.io.IOException;
 @Component
 public class InternalAccessFilter extends OncePerRequestFilter {
 
+    @Value("${app.gateway-secret}")
+    private String gatewaySecret;
+
     @Value("${app.internal-secret}")
     private String internalSecret;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith("/api/v1/notifications/internal");
+        return !request.getRequestURI().startsWith("/api/v1/notifications");
     }
 
     @Override
@@ -28,15 +31,31 @@ public class InternalAccessFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
 
-        String secret = request.getHeader("X-Internal-Secret");
+        String path = request.getRequestURI();
 
-        if (!internalSecret.equals(secret)) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("application/json;charset=UTF-8");
-            response.getWriter().write("{\"message\":\"Forbidden notification API\"}");
+        // API nội bộ chỉ cho service khác gọi bằng X-Internal-Secret (vd. gửi mail, tạo thông báo)
+        if (path.startsWith("/api/v1/notifications/internal")) {
+            if (!internalSecret.equals(request.getHeader("X-Internal-Secret"))) {
+                reject(response, "Forbidden internal notification API");
+                return;
+            }
+
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        // API cho người dùng (xem/đánh dấu đã đọc thông báo) phải đi qua Gateway
+        if (!gatewaySecret.equals(request.getHeader("X-Gateway-Secret"))) {
+            reject(response, "Forbidden notification API");
             return;
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private void reject(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"message\":\"" + message + "\"}");
     }
 }

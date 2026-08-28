@@ -840,6 +840,7 @@ public class MomoServiceImpl implements MomoService {
 
             BookingPaidEmailEvent event = BookingPaidEmailEvent.builder()
                     .toEmail(toEmail)
+                    .userId(payment.getUserId())
                     .bookingId(payment.getBookingId())
                     .amount(payment.getAmount())
                     .paidAt(payment.getPaidAt())
