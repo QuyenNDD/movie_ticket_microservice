@@ -480,6 +480,30 @@ public class BookingServiceImpl implements BookingService{
     }
 
     @Override
+    public List<BookingSummaryDTO> getMyBookings(String userId) {
+        List<Booking> bookings = bookingRepository.findByUserIdOrderByBookingTimeDesc(userId);
+
+        return bookings.stream()
+                .map(booking -> {
+                    long elapsedSeconds = Duration.between(booking.getBookingTime(), LocalDateTime.now()).getSeconds();
+                    long remainingSeconds = SEAT_HOLD_TTL_SECONDS - elapsedSeconds;
+                    if (remainingSeconds < 0 || !"PENDING".equalsIgnoreCase(booking.getStatus())) {
+                        remainingSeconds = 0;
+                    }
+
+                    return BookingSummaryDTO.builder()
+                            .bookingId(booking.getId())
+                            .showtimeId(booking.getShowtimeId())
+                            .status(booking.getStatus())
+                            .totalPrice(booking.getTotalPrice())
+                            .bookingTime(booking.getBookingTime())
+                            .expiresInSeconds(remainingSeconds)
+                            .build();
+                })
+                .toList();
+    }
+
+    @Override
     public Double getSeatPriceFromCatalog(String showtimeId, String seatId) {
         String url = catalogServiceUrl + "/showtimes/" + showtimeId + "/seats/" + seatId + "/price";
 

@@ -2,6 +2,7 @@ package com.movie.booking_service.service;
 
 import com.movie.booking_service.dto.BookingRequestDTO;
 import com.movie.booking_service.dto.BookingResponseDTO;
+import com.movie.booking_service.dto.BookingSummaryDTO;
 import com.movie.booking_service.dto.RoomSeatMatrixResponseDTO;
 import com.movie.booking_service.dto.SeatStatusResponseDTO;
 
@@ -13,6 +14,7 @@ public interface BookingService {
     BookingResponseDTO confirmPayment(String userId, String bookingId);
     BookingResponseDTO cancelBooking(String userId, String bookingId);
     BookingResponseDTO getBookingDetails(String userId, String bookingId);
+    List<BookingSummaryDTO> getMyBookings(String userId);
     Double getSnackPriceFromCatalog(String snackId);
     Double getSeatPriceFromCatalog(String showtimeId, String seatId);
     boolean hasActiveBookingForShowtimes(List<String> showtimeIds);

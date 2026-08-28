@@ -39,4 +39,6 @@ public interface BookingRepository extends JpaRepository<Booking, String> {
             @Param("showtimeIds") List<String> showtimeIds,
             @Param("statuses") List<String> statuses
     );
+
+    List<Booking> findByUserIdOrderByBookingTimeDesc(String userId);
 }

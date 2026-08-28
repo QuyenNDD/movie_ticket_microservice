@@ -59,8 +59,10 @@
 - [x] Tính tiền ghế + đồ ăn/nước
 - [x] Xác nhận thanh toán / hủy đặt vé (khi còn PENDING)
 - [x] Xem chi tiết 1 booking (kèm thời gian còn lại để thanh toán)
-- [ ] Xem lịch sử đặt vé của tôi (danh sách booking theo user)
-  - → không cần entity mới, `Booking.userId` đã đủ dữ liệu để query
+- [x] Xem lịch sử đặt vé của tôi (danh sách booking theo user)
+  - → không cần entity mới, `Booking.userId` đã đủ dữ liệu để query. API tại
+    `GET /api/v1/booking/my-bookings`, sắp xếp mới nhất trước, tái dùng logic
+    tính `expiresInSeconds` từ `getBookingDetails` (chỉ khác 0 khi PENDING).
 - [ ] Hủy vé đã thanh toán + hoàn tiền
   - → bổ sung field `cancellationReason`, `refundStatus` vào `Booking` — booking_db (phần hoàn tiền thực tế xem `RefundTransaction` ở mục Thanh toán)
 - [ ] Vé điện tử có mã QR
@@ -165,7 +167,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 30 | 40 |
+| 1 — MVP lõi | 31 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |

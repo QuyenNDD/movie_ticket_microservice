@@ -2,6 +2,7 @@ package com.movie.booking_service.controller;
 
 import com.movie.booking_service.dto.BookingRequestDTO;
 import com.movie.booking_service.dto.BookingResponseDTO;
+import com.movie.booking_service.dto.BookingSummaryDTO;
 import com.movie.booking_service.dto.RoomSeatMatrixResponseDTO;
 import com.movie.booking_service.dto.SeatStatusResponseDTO;
 import com.movie.booking_service.service.BookingService;
@@ -60,6 +61,14 @@ public class BookingController {
         BookingResponseDTO response = bookingService.getBookingDetails(userId, bookingId);
 
         // Trả về JSON giàu thông tin cùng HTTP Status 200 OK
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/my-bookings")
+    public ResponseEntity<List<BookingSummaryDTO>> getMyBookings(
+            @RequestHeader("X-User-Id") String userId) {
+
+        List<BookingSummaryDTO> response = bookingService.getMyBookings(userId);
         return ResponseEntity.ok(response);
     }
 
