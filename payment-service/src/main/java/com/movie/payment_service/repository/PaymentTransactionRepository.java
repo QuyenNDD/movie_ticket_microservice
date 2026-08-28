@@ -25,6 +25,8 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
 
     boolean existsByTransIdAndStatus(String transId, PaymentStatus status);
 
+    List<PaymentTransaction> findByUserIdOrderByCreatedAtDesc(String userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM PaymentTransaction p WHERE p.orderId = :orderId")
     Optional<PaymentTransaction> findByOrderIdForUpdate(@Param("orderId") String orderId);

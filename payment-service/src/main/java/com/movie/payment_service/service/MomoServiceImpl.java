@@ -4,6 +4,7 @@ import com.movie.payment_service.dto.BookingConfirmRequestEvent;
 import com.movie.payment_service.dto.BookingConfirmResultEvent;
 import com.movie.payment_service.dto.BookingPaidEmailEvent;
 import com.movie.payment_service.dto.MoMoIpnDTO;
+import com.movie.payment_service.dto.PaymentTransactionSummaryDTO;
 import com.movie.payment_service.entity.PaymentStatus;
 import com.movie.payment_service.entity.PaymentTransaction;
 import com.movie.payment_service.publisher.BookingConfirmRequestPublisher;
@@ -465,6 +466,20 @@ public class MomoServiceImpl implements MomoService {
         }
 
         confirmBookingAndMarkSuccess(payment);
+    }
+
+    @Override
+    public List<PaymentTransactionSummaryDTO> getMyTransactions(String userId) {
+        return paymentTransactionRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
+                .map(payment -> PaymentTransactionSummaryDTO.builder()
+                        .transactionId(payment.getId())
+                        .bookingId(payment.getBookingId())
+                        .amount(payment.getAmount())
+                        .status(payment.getStatus())
+                        .createdAt(payment.getCreatedAt())
+                        .paidAt(payment.getPaidAt())
+                        .build())
+                .toList();
     }
 
     private void validateMomoSignature(MoMoIpnDTO dto) {

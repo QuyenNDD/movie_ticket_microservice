@@ -100,8 +100,9 @@
   - → tổng quát hóa field `provider`/`method` trong `PaymentTransaction` — payment_db
 - [ ] Hoàn tiền tự động khi hủy vé
   - → Entity cần thêm: `RefundTransaction` (paymentTransactionId, amount, reason, status, refundedAt) — payment_db
-- [ ] Lịch sử giao dịch thanh toán cho người dùng
-  - → không cần entity mới, `PaymentTransaction.userId` đã đủ dữ liệu để query
+- [x] Lịch sử giao dịch thanh toán cho người dùng
+  - → không cần entity mới, `PaymentTransaction.userId` đã đủ dữ liệu để query.
+    API tại `GET /api/v1/payment/momo/my-transactions`, sắp xếp mới nhất trước.
 
 ### 1.5 Thông báo
 - [x] Gửi email xác nhận vé sau khi thanh toán thành công
@@ -187,7 +188,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 35 | 40 |
+| 1 — MVP lõi | 36 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |

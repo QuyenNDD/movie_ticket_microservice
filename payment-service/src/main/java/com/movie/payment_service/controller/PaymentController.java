@@ -2,12 +2,14 @@ package com.movie.payment_service.controller;
 
 import com.movie.payment_service.dto.MoMoIpnDTO;
 import com.movie.payment_service.dto.PaymentRequestDTO;
+import com.movie.payment_service.dto.PaymentTransactionSummaryDTO;
 import com.movie.payment_service.service.MomoService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -42,6 +44,14 @@ public class PaymentController {
         // MoMo yêu cầu phải trả về HTTP 204 (No Content) để xác nhận là Backend đã ghi nhận thành công,
         // nếu không MoMo sẽ liên tục gọi lại (Retry) gây rác hệ thống.
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/my-transactions")
+    public ResponseEntity<List<PaymentTransactionSummaryDTO>> getMyTransactions(
+            @RequestHeader("X-User-Id") String userId) {
+
+        List<PaymentTransactionSummaryDTO> response = moMoService.getMyTransactions(userId);
+        return ResponseEntity.ok(response);
     }
 
     @PostMapping("/test/{bookingId}/success")
