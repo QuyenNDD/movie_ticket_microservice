@@ -35,6 +35,13 @@ public class Booking {
     @Column(name = "booking_time", nullable = false)
     private LocalDateTime bookingTime;
 
+    @Column(name = "cancellation_reason", length = 255)
+    private String cancellationReason;
+
+    // NOT_APPLICABLE (không cần hoàn tiền) | PENDING (đang chờ hoàn tiền thủ công/tự động)
+    @Column(name = "refund_status", length = 20)
+    private String refundStatus;
+
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<BookingSeat> bookingSeats = new ArrayList<>();
 

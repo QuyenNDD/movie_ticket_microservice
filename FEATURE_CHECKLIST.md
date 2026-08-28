@@ -66,8 +66,13 @@
   - → không cần entity mới, `Booking.userId` đã đủ dữ liệu để query. API tại
     `GET /api/v1/booking/my-bookings`, sắp xếp mới nhất trước, tái dùng logic
     tính `expiresInSeconds` từ `getBookingDetails` (chỉ khác 0 khi PENDING).
-- [ ] Hủy vé đã thanh toán + hoàn tiền
-  - → bổ sung field `cancellationReason`, `refundStatus` vào `Booking` — booking_db (phần hoàn tiền thực tế xem `RefundTransaction` ở mục Thanh toán)
+- [x] Hủy vé đã thanh toán + hoàn tiền
+  - → đã bổ sung field `cancellationReason`, `refundStatus` vào `Booking` — booking_db.
+    `PUT /{bookingId}/cancel` giờ nhận thêm body `{reason}` (tùy chọn) và cho phép
+    hủy cả booking đang PAID (trước đây chỉ hủy được PENDING), với điều kiện suất
+    chiếu chưa bắt đầu. `refundStatus` = `NOT_APPLICABLE` (hủy khi còn PENDING,
+    chưa thu tiền) hoặc `PENDING` (đã thu tiền, chờ hoàn). **Hoàn tiền thực tế
+    (gọi MoMo refund) chưa làm** — xem `RefundTransaction` ở mục Thanh toán (1.4).
 - [ ] Vé điện tử có mã QR
   - → Entity cần thêm: `Ticket` (bookingSeatId, qrCode, checkedInAt, checkedInBy) — booking_db
 - [ ] Check-in tại rạp (quét QR soát vé)
@@ -170,7 +175,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 31 | 40 |
+| 1 — MVP lõi | 32 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |

@@ -17,6 +17,8 @@ public class BookingResponseDTO {
     private String message;
     private Double totalPrice;
     private long expiresInSeconds;
+    private String cancellationReason;
+    private String refundStatus;
 
     // Thêm để gửi mail hiển thị tên ghế
     private List<SeatItem> seats;

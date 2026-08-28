@@ -419,7 +419,7 @@ public class BookingServiceImpl implements BookingService{
 
     @Override
     @Transactional
-    public BookingResponseDTO cancelBooking(String userId, String bookingId) {
+    public BookingResponseDTO cancelBooking(String userId, String bookingId, String reason) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy thông tin hóa đơn này!"));
 
@@ -427,15 +427,41 @@ public class BookingServiceImpl implements BookingService{
             throw new RuntimeException("Lỗi bảo mật: Bạn không có quyền hủy hóa đơn của người khác!");
         }
 
-        if (!"PENDING".equals(booking.getStatus())) {
-            throw new RuntimeException("Hóa đơn này không ở trạng thái chờ thanh toán, không thể hủy!");
+        String currentStatus = booking.getStatus();
+
+        if ("CANCELLED".equalsIgnoreCase(currentStatus)) {
+            throw new RuntimeException("Hóa đơn này đã được hủy trước đó!");
+        }
+
+        boolean wasPaid = "PAID".equalsIgnoreCase(currentStatus);
+
+        if (!wasPaid && !"PENDING".equalsIgnoreCase(currentStatus)) {
+            throw new RuntimeException("Hóa đơn này không ở trạng thái có thể hủy!");
+        }
+
+        if (wasPaid) {
+            // Vé đã thanh toán chỉ được hủy khi suất chiếu chưa bắt đầu
+            String showtimeInfoUrl = catalogServiceUrl + "/showtimes/" + booking.getShowtimeId();
+            ShowtimeResponseDTO showtimeInfo = internalGet(showtimeInfoUrl, ShowtimeResponseDTO.class);
+
+            if (showtimeInfo == null || showtimeInfo.getStartTime() == null) {
+                throw new RuntimeException("Không lấy được thông tin suất chiếu để kiểm tra điều kiện hủy vé!");
+            }
+
+            if (!showtimeInfo.getStartTime().isAfter(LocalDateTime.now())) {
+                throw new RuntimeException("Suất chiếu đã bắt đầu hoặc đã kết thúc, không thể hủy vé!");
+            }
         }
 
         // 1. Cập nhật DB
         booking.setStatus("CANCELLED");
+        booking.setCancellationReason(reason);
+        // Hoàn tiền thực tế (gọi MoMo refund) là hạng mục riêng — ở đây chỉ đánh dấu
+        // trạng thái chờ xử lý để payment-service xử lý sau.
+        booking.setRefundStatus(wasPaid ? "PENDING" : "NOT_APPLICABLE");
         bookingRepository.save(booking);
 
-        // 2. Giải phóng Redis tức thì
+        // 2. Giải phóng Redis tức thì (booking PAID thường không còn lock, nhưng xóa cho chắc)
         String redisKeyPrefix = "lock:showtime:" + booking.getShowtimeId() + ":seat:";
         for (BookingSeat seat : booking.getBookingSeats()) {
             redisTemplate.delete(redisKeyPrefix + seat.getSeatId());
@@ -445,7 +471,11 @@ public class BookingServiceImpl implements BookingService{
         return BookingResponseDTO.builder()
                 .bookingId(booking.getId())
                 .status("CANCELLED")
-                .message("Hủy hóa đơn và nhả ghế thành công!")
+                .message(wasPaid
+                        ? "Hủy vé đã thanh toán thành công! Yêu cầu hoàn tiền đang chờ xử lý."
+                        : "Hủy hóa đơn và nhả ghế thành công!")
+                .cancellationReason(booking.getCancellationReason())
+                .refundStatus(booking.getRefundStatus())
                 .build();
     }
 
@@ -476,6 +506,8 @@ public class BookingServiceImpl implements BookingService{
                 .message("Lấy thông tin hóa đơn thành công.")
                 .seats(seatItems)
                 .snacks(snackItems)
+                .cancellationReason(booking.getCancellationReason())
+                .refundStatus(booking.getRefundStatus())
                 .build();
     }
 

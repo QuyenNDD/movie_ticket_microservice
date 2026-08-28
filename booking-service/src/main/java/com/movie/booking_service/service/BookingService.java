@@ -12,7 +12,7 @@ public interface BookingService {
     BookingResponseDTO holdSeats(String userId, BookingRequestDTO request);
     RoomSeatMatrixResponseDTO getSeatsForShowtime(String showtimeId);
     BookingResponseDTO confirmPayment(String userId, String bookingId);
-    BookingResponseDTO cancelBooking(String userId, String bookingId);
+    BookingResponseDTO cancelBooking(String userId, String bookingId, String reason);
     BookingResponseDTO getBookingDetails(String userId, String bookingId);
     List<BookingSummaryDTO> getMyBookings(String userId);
     Double getSnackPriceFromCatalog(String snackId);

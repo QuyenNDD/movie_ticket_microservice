@@ -3,6 +3,7 @@ package com.movie.booking_service.controller;
 import com.movie.booking_service.dto.BookingRequestDTO;
 import com.movie.booking_service.dto.BookingResponseDTO;
 import com.movie.booking_service.dto.BookingSummaryDTO;
+import com.movie.booking_service.dto.CancelBookingRequestDTO;
 import com.movie.booking_service.dto.RoomSeatMatrixResponseDTO;
 import com.movie.booking_service.dto.SeatStatusResponseDTO;
 import com.movie.booking_service.service.BookingService;
@@ -46,9 +47,11 @@ public class BookingController {
     @PutMapping("/{bookingId}/cancel")
     public ResponseEntity<BookingResponseDTO> cancelBooking(
             @RequestHeader("X-User-Id") String userId, // Bắt buộc phải có userId từ Gateway để bảo mật
-            @PathVariable String bookingId) {
+            @PathVariable String bookingId,
+            @RequestBody(required = false) CancelBookingRequestDTO request) {
 
-        BookingResponseDTO response = bookingService.cancelBooking(userId, bookingId);
+        String reason = request != null ? request.getReason() : null;
+        BookingResponseDTO response = bookingService.cancelBooking(userId, bookingId, reason);
         return new ResponseEntity<>(response, HttpStatus.OK);
     }
 
