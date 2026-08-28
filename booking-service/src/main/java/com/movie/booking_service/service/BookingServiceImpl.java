@@ -8,6 +8,7 @@ import com.movie.booking_service.entity.BookingSeat;
 import com.movie.booking_service.entity.BookingSnack;
 import com.movie.booking_service.entity.Ticket;
 import com.movie.booking_service.repository.BookingRepository;
+import com.movie.booking_service.repository.BookingSeatRepository;
 import com.movie.booking_service.repository.TicketRepository;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,6 +44,9 @@ public class BookingServiceImpl implements BookingService{
 
     @Autowired
     private TicketRepository ticketRepository;
+
+    @Autowired
+    private BookingSeatRepository bookingSeatRepository;
 
     private static final long SEAT_HOLD_TTL_SECONDS = 600; // 10 phút
     private static final long BOOKING_CUTOFF_MINUTES = 15; // Khóa bán vé trước giờ chiếu 15 phút
@@ -589,6 +593,42 @@ public class BookingServiceImpl implements BookingService{
                             .build();
                 })
                 .toList();
+    }
+
+    @Override
+    @Transactional
+    public TicketResponseDTO checkInTicket(String staffUserId, String qrCode) {
+        Ticket ticket = ticketRepository.findByQrCode(qrCode)
+                .orElseThrow(() -> new RuntimeException("Mã QR không hợp lệ hoặc không tồn tại!"));
+
+        if (ticket.getCheckedInAt() != null) {
+            throw new RuntimeException("Vé này đã được soát vé lúc " + ticket.getCheckedInAt() + ", không thể soát lại!");
+        }
+
+        BookingSeat bookingSeat = bookingSeatRepository.findById(ticket.getBookingSeatId())
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy thông tin ghế ứng với vé này!"));
+
+        Booking booking = bookingSeat.getBooking();
+
+        if (!"PAID".equalsIgnoreCase(booking.getStatus())) {
+            throw new RuntimeException("Hóa đơn của vé này đã bị hủy, không hợp lệ để soát vé!");
+        }
+
+        ticket.setCheckedInAt(LocalDateTime.now());
+        ticket.setCheckedInBy(staffUserId);
+        Ticket savedTicket = ticketRepository.save(ticket);
+
+        Map<String, String> seatNameMap = getSeatNameMapByShowtimeId(booking.getShowtimeId());
+        String seatId = bookingSeat.getSeatId();
+
+        return TicketResponseDTO.builder()
+                .ticketId(savedTicket.getId())
+                .seatId(seatId)
+                .seatName(seatNameMap.getOrDefault(seatId, seatId))
+                .qrCode(savedTicket.getQrCode())
+                .checkedInAt(savedTicket.getCheckedInAt())
+                .checkedInBy(savedTicket.getCheckedInBy())
+                .build();
     }
 
     @Override

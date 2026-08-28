@@ -80,8 +80,11 @@
     idempotent). API xem vé: `GET /api/v1/booking/{bookingId}/tickets` (chỉ chủ booking,
     chỉ khi đã PAID). `qrCode` là chuỗi token ngẫu nhiên — render thành ảnh QR là việc
     của FE.
-- [ ] Check-in tại rạp (quét QR soát vé)
-  - → dùng chung entity `Ticket` ở trên
+- [x] Check-in tại rạp (quét QR soát vé)
+  - → dùng chung entity `Ticket` ở trên. API `POST /api/v1/booking/tickets/checkin`
+    (body `{qrCode}`), chỉ nhân viên có quyền ADMIN được gọi (gateway chặn ở
+    `isAdminEndpoint`). Chặn soát vé lặp lại (đã có `checkedInAt`), chặn soát vé
+    thuộc booking đã bị hủy sau khi thanh toán.
 - [ ] Chọn combo bắp nước theo gói ưu đãi
   - → Entity cần thêm: `SnackCombo` (name, items[], price) — catalog_db
 
@@ -180,7 +183,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 33 | 40 |
+| 1 — MVP lõi | 34 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |

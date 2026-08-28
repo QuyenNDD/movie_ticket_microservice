@@ -118,7 +118,8 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
                 || path.startsWith("/api/v1/catalog/seats")
                 || path.startsWith("/api/v1/catalog/showtimes")
                 || path.startsWith("/api/v1/catalog/snacks")
-                || path.startsWith("/api/v1/catalog/files");
+                || path.startsWith("/api/v1/catalog/files")
+                || path.startsWith("/api/v1/booking/tickets/checkin");
     }
 
     private boolean isAdmin(String role) {

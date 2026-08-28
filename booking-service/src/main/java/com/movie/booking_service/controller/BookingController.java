@@ -4,6 +4,7 @@ import com.movie.booking_service.dto.BookingRequestDTO;
 import com.movie.booking_service.dto.BookingResponseDTO;
 import com.movie.booking_service.dto.BookingSummaryDTO;
 import com.movie.booking_service.dto.CancelBookingRequestDTO;
+import com.movie.booking_service.dto.CheckInRequestDTO;
 import com.movie.booking_service.dto.RoomSeatMatrixResponseDTO;
 import com.movie.booking_service.dto.SeatStatusResponseDTO;
 import com.movie.booking_service.dto.TicketResponseDTO;
@@ -74,6 +75,15 @@ public class BookingController {
             @PathVariable String bookingId) {
 
         List<TicketResponseDTO> response = bookingService.getTickets(userId, bookingId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/tickets/checkin")
+    public ResponseEntity<TicketResponseDTO> checkInTicket(
+            @RequestHeader("X-User-Id") String staffUserId, // Nhân viên soát vé, do Gateway tiêm vào (yêu cầu quyền ADMIN)
+            @Valid @RequestBody CheckInRequestDTO request) {
+
+        TicketResponseDTO response = bookingService.checkInTicket(staffUserId, request.getQrCode());
         return ResponseEntity.ok(response);
     }
 
