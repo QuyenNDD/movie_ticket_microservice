@@ -42,6 +42,10 @@ public class Booking {
     @Column(name = "refund_status", length = 20)
     private String refundStatus;
 
+    // Đã gửi thông báo nhắc lịch trước giờ chiếu chưa — chỉ gửi đúng 1 lần/booking
+    @Column(name = "reminder_sent")
+    private Boolean reminderSent = false;
+
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<BookingSeat> bookingSeats = new ArrayList<>();
 

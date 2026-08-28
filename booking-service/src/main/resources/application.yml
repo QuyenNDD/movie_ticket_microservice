@@ -46,6 +46,9 @@ app:
   internal-secret: ${INTERNAL_SECRET:8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c}
   catalog-service-url: ${CATALOG_SERVICE_URL:http://localhost:8081/api/v1/catalog}
   payment-service-url: ${PAYMENT_SERVICE_URL:http://localhost:8084/api/v1/payment}
+  notification-service-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8085}
+  reminder:
+    before-minutes: ${SHOWTIME_REMINDER_BEFORE_MINUTES:60}
   rabbitmq:
     exchange: movie.ticket.exchange
     booking-confirm-request-queue: booking.confirm.request.queue

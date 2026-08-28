@@ -64,6 +64,12 @@ public class BookingServiceImpl implements BookingService{
     @Value("${app.payment-service-url:http://localhost:8084/api/v1/payment}")
     private String paymentServiceUrl;
 
+    @Value("${app.notification-service-url:http://localhost:8085}")
+    private String notificationServiceUrl;
+
+    @Value("${app.reminder.before-minutes:60}")
+    private int reminderBeforeMinutes;
+
     @Transactional
     public BookingResponseDTO holdSeats(String userId, BookingRequestDTO request) {
         String showtimeId = request.getShowtimeId();
@@ -698,6 +704,71 @@ public class BookingServiceImpl implements BookingService{
                 .checkedInAt(savedTicket.getCheckedInAt())
                 .checkedInBy(savedTicket.getCheckedInBy())
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void sendUpcomingShowtimeReminders() {
+        List<Booking> candidates = bookingRepository.findByStatusAndReminderSentFalse("PAID");
+
+        if (candidates.isEmpty()) {
+            return;
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime windowEnd = now.plusMinutes(reminderBeforeMinutes);
+
+        Map<String, List<Booking>> bookingsByShowtime = candidates.stream()
+                .collect(Collectors.groupingBy(Booking::getShowtimeId));
+
+        for (Map.Entry<String, List<Booking>> entry : bookingsByShowtime.entrySet()) {
+            ShowtimeResponseDTO showtimeInfo;
+            try {
+                showtimeInfo = getShowtimeInfoOnly(entry.getKey());
+            } catch (Exception ex) {
+                // Lỗi tạm thời khi gọi Catalog — bỏ qua, thử lại ở lượt chạy sau
+                continue;
+            }
+
+            if (showtimeInfo == null || showtimeInfo.getStartTime() == null) {
+                continue;
+            }
+
+            LocalDateTime startTime = showtimeInfo.getStartTime();
+
+            // Chưa tới lúc nhắc (còn xa hơn reminderBeforeMinutes), hoặc suất chiếu đã diễn ra
+            if (startTime.isBefore(now) || startTime.isAfter(windowEnd)) {
+                continue;
+            }
+
+            for (Booking booking : entry.getValue()) {
+                try {
+                    sendReminderNotification(booking, showtimeInfo);
+                    booking.setReminderSent(true);
+                    bookingRepository.save(booking);
+                } catch (Exception ex) {
+                    // Không đánh dấu reminderSent nếu gửi thất bại — sẽ tự thử lại ở lượt chạy tiếp theo
+                    System.err.println(">>> Gửi nhắc lịch thất bại cho booking " + booking.getId()
+                            + ": " + ex.getMessage());
+                }
+            }
+        }
+    }
+
+    private void sendReminderNotification(Booking booking, ShowtimeResponseDTO showtimeInfo) {
+        String title = "Sắp đến giờ chiếu phim!";
+        String content = "Suất chiếu \"" + showtimeInfo.getMovieTitle() + "\" tại "
+                + showtimeInfo.getCinemaName() + " sẽ bắt đầu lúc "
+                + showtimeInfo.getStartTime() + ". Đừng quên đến rạp đúng giờ nhé!";
+
+        Map<String, String> requestBody = new HashMap<>();
+        requestBody.put("userId", booking.getUserId());
+        requestBody.put("title", title);
+        requestBody.put("content", content);
+        requestBody.put("type", "SHOWTIME_REMINDER");
+
+        String url = notificationServiceUrl + "/api/v1/notifications/internal/create";
+        internalPost(url, requestBody, Map.class);
     }
 
     @Override

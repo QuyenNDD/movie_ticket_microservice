@@ -22,4 +22,5 @@ public interface BookingService {
     Double getComboPriceFromCatalog(String comboId);
     Double getSeatPriceFromCatalog(String showtimeId, String seatId);
     boolean hasActiveBookingForShowtimes(List<String> showtimeIds);
+    void sendUpcomingShowtimeReminders();
 }

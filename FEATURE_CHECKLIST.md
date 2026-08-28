@@ -123,8 +123,13 @@
     công có sẵn (`BookingPaidEmailEvent` qua RabbitMQ, thêm field `userId`): khi gửi mail xác
     nhận vé, tạo luôn 1 thông báo in-app tương ứng — lỗi tạo thông báo không làm retry gửi
     lại mail. Bổ sung `GlobalExceptionHandler` còn thiếu ở notification-service.
-- [ ] Nhắc lịch trước giờ chiếu (email/push)
-  - → Entity cần thêm: `NotificationTemplate` — notification_db
+- [x] Nhắc lịch trước giờ chiếu (email/push)
+  - → không dùng `NotificationTemplate` (nội dung sinh động, chưa cần template hóa) — tái dùng
+    entity `Notification` sẵn có. booking-service thêm field `Booking.reminderSent` (chỉ gửi
+    đúng 1 lần/booking) + scheduler `ShowtimeReminderJob` (`@Scheduled(fixedRate=5 phút)`) quét
+    booking PAID chưa nhắc, gom theo `showtimeId` để giảm số lần gọi catalog-service, nếu suất
+    chiếu bắt đầu trong vòng 60 phút (`app.reminder.before-minutes`, cấu hình được) thì gọi
+    `POST /api/v1/notifications/internal/create` tạo thông báo in-app loại `SHOWTIME_REMINDER`.
 - [ ] Push notification (mobile/web push)
   - → dùng chung `Notification` ở trên, thêm field `channel` (EMAIL/PUSH/IN_APP)
 - [ ] Email khuyến mãi / marketing
@@ -203,7 +208,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 38 | 40 |
+| 1 — MVP lõi | 39 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |

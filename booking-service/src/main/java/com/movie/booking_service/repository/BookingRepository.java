@@ -41,4 +41,6 @@ public interface BookingRepository extends JpaRepository<Booking, String> {
     );
 
     List<Booking> findByUserIdOrderByBookingTimeDesc(String userId);
+
+    List<Booking> findByStatusAndReminderSentFalse(String status);
 }
