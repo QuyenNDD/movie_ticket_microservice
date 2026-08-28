@@ -6,7 +6,9 @@ import com.movie.booking_service.dto.*;
 import com.movie.booking_service.entity.Booking;
 import com.movie.booking_service.entity.BookingSeat;
 import com.movie.booking_service.entity.BookingSnack;
+import com.movie.booking_service.entity.Ticket;
 import com.movie.booking_service.repository.BookingRepository;
+import com.movie.booking_service.repository.TicketRepository;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,6 +40,9 @@ public class BookingServiceImpl implements BookingService{
 
     @Autowired
     private RestTemplate restTemplate;
+
+    @Autowired
+    private TicketRepository ticketRepository;
 
     private static final long SEAT_HOLD_TTL_SECONDS = 600; // 10 phút
     private static final long BOOKING_CUTOFF_MINUTES = 15; // Khóa bán vé trước giờ chiếu 15 phút
@@ -402,6 +407,16 @@ public class BookingServiceImpl implements BookingService{
         booking.setStatus("PAID");
         Booking savedBooking = bookingRepository.save(booking);
 
+        // Sinh vé điện tử QR — mỗi ghế trong booking có 1 vé riêng
+        List<Ticket> tickets = savedBooking.getBookingSeats().stream()
+                .map(bookingSeat -> {
+                    Ticket ticket = new Ticket();
+                    ticket.setBookingSeatId(bookingSeat.getId());
+                    return ticket;
+                })
+                .toList();
+        ticketRepository.saveAll(tickets);
+
         // Xóa Redis lock
         String redisKeyPrefix = "lock:showtime:" + savedBooking.getShowtimeId() + ":seat:";
 
@@ -530,6 +545,47 @@ public class BookingServiceImpl implements BookingService{
                             .totalPrice(booking.getTotalPrice())
                             .bookingTime(booking.getBookingTime())
                             .expiresInSeconds(remainingSeconds)
+                            .build();
+                })
+                .toList();
+    }
+
+    @Override
+    public List<TicketResponseDTO> getTickets(String userId, String bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy thông tin hóa đơn này!"));
+
+        if (!booking.getUserId().equals(userId)) {
+            throw new RuntimeException("Lỗi bảo mật: Không có quyền truy cập!");
+        }
+
+        if (!"PAID".equalsIgnoreCase(booking.getStatus())) {
+            throw new RuntimeException("Hóa đơn chưa thanh toán nên chưa có vé điện tử!");
+        }
+
+        Map<String, String> seatNameMap = getSeatNameMapByShowtimeId(booking.getShowtimeId());
+
+        List<String> bookingSeatIds = booking.getBookingSeats().stream()
+                .map(BookingSeat::getId)
+                .toList();
+        Map<String, Ticket> ticketByBookingSeatId = ticketRepository.findByBookingSeatIdIn(bookingSeatIds).stream()
+                .collect(Collectors.toMap(Ticket::getBookingSeatId, ticket -> ticket));
+
+        return booking.getBookingSeats().stream()
+                .map(bookingSeat -> {
+                    Ticket ticket = ticketByBookingSeatId.get(bookingSeat.getId());
+                    if (ticket == null) {
+                        throw new RuntimeException("Thiếu vé điện tử cho ghế " + bookingSeat.getSeatId() + " — vui lòng liên hệ hỗ trợ!");
+                    }
+
+                    String seatId = bookingSeat.getSeatId();
+                    return TicketResponseDTO.builder()
+                            .ticketId(ticket.getId())
+                            .seatId(seatId)
+                            .seatName(seatNameMap.getOrDefault(seatId, seatId))
+                            .qrCode(ticket.getQrCode())
+                            .checkedInAt(ticket.getCheckedInAt())
+                            .checkedInBy(ticket.getCheckedInBy())
                             .build();
                 })
                 .toList();

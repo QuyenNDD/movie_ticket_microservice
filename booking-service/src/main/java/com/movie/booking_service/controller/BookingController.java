@@ -6,6 +6,7 @@ import com.movie.booking_service.dto.BookingSummaryDTO;
 import com.movie.booking_service.dto.CancelBookingRequestDTO;
 import com.movie.booking_service.dto.RoomSeatMatrixResponseDTO;
 import com.movie.booking_service.dto.SeatStatusResponseDTO;
+import com.movie.booking_service.dto.TicketResponseDTO;
 import com.movie.booking_service.service.BookingService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,6 +65,15 @@ public class BookingController {
         BookingResponseDTO response = bookingService.getBookingDetails(userId, bookingId);
 
         // Trả về JSON giàu thông tin cùng HTTP Status 200 OK
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/{bookingId}/tickets")
+    public ResponseEntity<List<TicketResponseDTO>> getTickets(
+            @RequestHeader("X-User-Id") String userId,
+            @PathVariable String bookingId) {
+
+        List<TicketResponseDTO> response = bookingService.getTickets(userId, bookingId);
         return ResponseEntity.ok(response);
     }
 

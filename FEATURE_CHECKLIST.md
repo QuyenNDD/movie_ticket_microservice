@@ -73,8 +73,13 @@
     chiếu chưa bắt đầu. `refundStatus` = `NOT_APPLICABLE` (hủy khi còn PENDING,
     chưa thu tiền) hoặc `PENDING` (đã thu tiền, chờ hoàn). **Hoàn tiền thực tế
     (gọi MoMo refund) chưa làm** — xem `RefundTransaction` ở mục Thanh toán (1.4).
-- [ ] Vé điện tử có mã QR
-  - → Entity cần thêm: `Ticket` (bookingSeatId, qrCode, checkedInAt, checkedInBy) — booking_db
+- [x] Vé điện tử có mã QR
+  - → Entity đã tạo: `Ticket` (bookingSeatId, qrCode, checkedInAt, checkedInBy) — booking_db,
+    unique theo `bookingSeatId` và `qrCode`. Vé được sinh tự động (1 vé/ghế) ngay khi
+    `confirmPayment` chuyển booking sang PAID lần đầu (không sinh trùng khi confirm
+    idempotent). API xem vé: `GET /api/v1/booking/{bookingId}/tickets` (chỉ chủ booking,
+    chỉ khi đã PAID). `qrCode` là chuỗi token ngẫu nhiên — render thành ảnh QR là việc
+    của FE.
 - [ ] Check-in tại rạp (quét QR soát vé)
   - → dùng chung entity `Ticket` ở trên
 - [ ] Chọn combo bắp nước theo gói ưu đãi
@@ -175,7 +180,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 32 | 40 |
+| 1 — MVP lõi | 33 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |
@@ -194,7 +199,7 @@
 | `EmailVerificationToken` | auth_db | userId, token, expiresAt | xác minh email |
 | `Review` ✅ đã tạo | catalog_db | movieId, userId, rating, comment | đánh giá phim |
 | `Favorite` ✅ đã tạo | catalog_db | userId, movieId | watchlist |
-| `Ticket` | booking_db | bookingSeatId, qrCode, checkedInAt, checkedInBy | vé QR + check-in |
+| `Ticket` ✅ đã tạo | booking_db | bookingSeatId, qrCode, checkedInAt, checkedInBy | vé QR + check-in |
 | `RefundTransaction` | payment_db | paymentTransactionId, amount, reason, status | hoàn tiền |
 | `Notification` | notification_db (**mới**) | userId, title, content, type, isRead, createdAt | thông báo trong app |
 
