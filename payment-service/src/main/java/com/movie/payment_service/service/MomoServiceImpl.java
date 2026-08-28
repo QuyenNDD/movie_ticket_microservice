@@ -5,11 +5,15 @@ import com.movie.payment_service.dto.BookingConfirmResultEvent;
 import com.movie.payment_service.dto.BookingPaidEmailEvent;
 import com.movie.payment_service.dto.MoMoIpnDTO;
 import com.movie.payment_service.dto.PaymentTransactionSummaryDTO;
+import com.movie.payment_service.dto.RefundResponseDTO;
 import com.movie.payment_service.entity.PaymentStatus;
 import com.movie.payment_service.entity.PaymentTransaction;
+import com.movie.payment_service.entity.RefundStatus;
+import com.movie.payment_service.entity.RefundTransaction;
 import com.movie.payment_service.publisher.BookingConfirmRequestPublisher;
 import com.movie.payment_service.publisher.BookingPaidEmailPublisher;
 import com.movie.payment_service.repository.PaymentTransactionRepository;
+import com.movie.payment_service.repository.RefundTransactionRepository;
 import com.movie.payment_service.util.HmacSHA256Util;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,6 +46,9 @@ public class MomoServiceImpl implements MomoService {
     @Value("${momo.endpoint}")
     private String endpoint;
 
+    @Value("${momo.refund-endpoint}")
+    private String refundEndpoint;
+
     @Value("${momo.return-url}")
     private String returnUrl;
 
@@ -61,6 +68,9 @@ public class MomoServiceImpl implements MomoService {
 
     @Autowired
     private PaymentTransactionRepository paymentTransactionRepository;
+
+    @Autowired
+    private RefundTransactionRepository refundTransactionRepository;
 
     @Autowired
     private BookingPaidEmailPublisher bookingPaidEmailPublisher;
@@ -480,6 +490,119 @@ public class MomoServiceImpl implements MomoService {
                         .paidAt(payment.getPaidAt())
                         .build())
                 .toList();
+    }
+
+    @Override
+    @Transactional
+    public RefundResponseDTO refundPayment(String bookingId, String reason) {
+        PaymentTransaction payment = paymentTransactionRepository.findByBookingId(bookingId)
+                .orElseThrow(() -> new RuntimeException("Không tìm thấy giao dịch thanh toán cho booking này!"));
+
+        if (!PaymentStatus.SUCCESS.equals(payment.getStatus())) {
+            throw new RuntimeException("Giao dịch này chưa thanh toán thành công, không thể hoàn tiền!");
+        }
+
+        RefundTransaction existingRefund = refundTransactionRepository
+                .findByPaymentTransactionId(payment.getId())
+                .orElse(null);
+
+        // Idempotent: đã hoàn tiền thành công trước đó thì không gọi lại MoMo nữa
+        if (existingRefund != null && RefundStatus.SUCCESS.equals(existingRefund.getStatus())) {
+            return RefundResponseDTO.builder()
+                    .refundTransactionId(existingRefund.getId())
+                    .bookingId(bookingId)
+                    .amount(existingRefund.getAmount())
+                    .status(RefundStatus.SUCCESS)
+                    .message("Booking này đã được hoàn tiền trước đó.")
+                    .build();
+        }
+
+        RefundTransaction refund = existingRefund != null ? existingRefund : new RefundTransaction();
+        refund.setPaymentTransactionId(payment.getId());
+        refund.setBookingId(bookingId);
+        refund.setAmount(payment.getAmount());
+        refund.setReason(reason);
+        refund.setStatus(RefundStatus.PENDING);
+        refund.setLastError(null);
+        refundTransactionRepository.save(refund);
+
+        Long transIdLong;
+        try {
+            transIdLong = Long.parseLong(payment.getTransId());
+        } catch (Exception ex) {
+            refund.setStatus(RefundStatus.FAILED);
+            refund.setLastError("Giao dịch không có mã transId MoMo hợp lệ (có thể là giao dịch giả lập test), không thể hoàn tiền tự động!");
+            refundTransactionRepository.save(refund);
+
+            return RefundResponseDTO.builder()
+                    .refundTransactionId(refund.getId())
+                    .bookingId(bookingId)
+                    .amount(refund.getAmount())
+                    .status(RefundStatus.FAILED)
+                    .message(refund.getLastError())
+                    .build();
+        }
+
+        String refundOrderId = "REFUND_" + payment.getOrderId() + "_" + System.currentTimeMillis();
+        String requestId = refundOrderId;
+        String description = "Hoan tien huy ve" + (reason != null && !reason.isBlank() ? ": " + reason : "");
+
+        String rawSignature =
+                "accessKey=" + accessKey
+                + "&amount=" + payment.getAmount()
+                + "&description=" + description
+                + "&orderId=" + refundOrderId
+                + "&partnerCode=" + partnerCode
+                + "&requestId=" + requestId
+                + "&transId=" + transIdLong;
+
+        String signature = hmacSHA256(rawSignature, secretKey);
+
+        Map<String, Object> requestBody = new HashMap<>();
+        requestBody.put("partnerCode", partnerCode);
+        requestBody.put("orderId", refundOrderId);
+        requestBody.put("requestId", requestId);
+        requestBody.put("amount", payment.getAmount());
+        requestBody.put("transId", transIdLong);
+        requestBody.put("lang", "vi");
+        requestBody.put("description", description);
+        requestBody.put("signature", signature);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+
+        try {
+            Map<String, Object> response = restTemplate.postForObject(
+                    refundEndpoint, new HttpEntity<>(requestBody, headers), Map.class);
+
+            Object resultCodeObj = response != null ? response.get("resultCode") : null;
+            boolean success = resultCodeObj != null && Integer.parseInt(resultCodeObj.toString()) == 0;
+
+            if (success) {
+                refund.setStatus(RefundStatus.SUCCESS);
+                refund.setRefundedAt(LocalDateTime.now());
+                Object momoTransId = response.get("transId");
+                refund.setMomoRefundTransId(momoTransId != null ? momoTransId.toString() : null);
+            } else {
+                refund.setStatus(RefundStatus.FAILED);
+                refund.setLastError("MoMo từ chối hoàn tiền, response=" + response);
+            }
+        } catch (Exception ex) {
+            refund.setStatus(RefundStatus.FAILED);
+            refund.setLastError("Lỗi khi gọi API hoàn tiền MoMo: " + ex.getMessage());
+        }
+
+        refundTransactionRepository.save(refund);
+
+        return RefundResponseDTO.builder()
+                .refundTransactionId(refund.getId())
+                .bookingId(bookingId)
+                .amount(refund.getAmount())
+                .status(refund.getStatus())
+                .message(RefundStatus.SUCCESS.equals(refund.getStatus())
+                        ? "Hoàn tiền thành công!"
+                        : "Hoàn tiền tự động thất bại: " + refund.getLastError())
+                .build();
     }
 
     private void validateMomoSignature(MoMoIpnDTO dto) {

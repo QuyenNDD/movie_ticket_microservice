@@ -61,6 +61,9 @@ public class BookingServiceImpl implements BookingService{
     @Value("${app.catalog-service-url:http://localhost:8081/api/v1/catalog}")
     private String catalogServiceUrl;
 
+    @Value("${app.payment-service-url:http://localhost:8084/api/v1/payment}")
+    private String paymentServiceUrl;
+
     @Transactional
     public BookingResponseDTO holdSeats(String userId, BookingRequestDTO request) {
         String showtimeId = request.getShowtimeId();
@@ -506,8 +509,6 @@ public class BookingServiceImpl implements BookingService{
         // 1. Cập nhật DB
         booking.setStatus("CANCELLED");
         booking.setCancellationReason(reason);
-        // Hoàn tiền thực tế (gọi MoMo refund) là hạng mục riêng — ở đây chỉ đánh dấu
-        // trạng thái chờ xử lý để payment-service xử lý sau.
         booking.setRefundStatus(wasPaid ? "PENDING" : "NOT_APPLICABLE");
         bookingRepository.save(booking);
 
@@ -517,16 +518,51 @@ public class BookingServiceImpl implements BookingService{
             redisTemplate.delete(redisKeyPrefix + seat.getSeatId());
         }
 
+        // 2.1 Gọi payment-service hoàn tiền tự động nếu vé đã thanh toán.
+        // Hủy vé vẫn thành công dù bước hoàn tiền lỗi — refundStatus giữ nguyên PENDING
+        // để xử lý thủ công sau, không chặn thao tác hủy của user.
+        String refundMessage = null;
+        if (wasPaid) {
+            refundMessage = triggerAutoRefund(booking, reason);
+        }
+
         // 3. Trả về DTO cấu trúc sạch sẽ cho FE dễ xử lý
         return BookingResponseDTO.builder()
                 .bookingId(booking.getId())
                 .status("CANCELLED")
                 .message(wasPaid
-                        ? "Hủy vé đã thanh toán thành công! Yêu cầu hoàn tiền đang chờ xử lý."
+                        ? "Hủy vé đã thanh toán thành công! " + refundMessage
                         : "Hủy hóa đơn và nhả ghế thành công!")
                 .cancellationReason(booking.getCancellationReason())
                 .refundStatus(booking.getRefundStatus())
                 .build();
+    }
+
+    private String triggerAutoRefund(Booking booking, String reason) {
+        try {
+            Map<String, String> requestBody = reason != null ? Map.of("reason", reason) : Map.of();
+            String url = paymentServiceUrl + "/momo/refund/" + booking.getId();
+
+            Map<?, ?> response = internalPost(url, requestBody, Map.class);
+            String refundStatus = response != null && response.get("status") != null
+                    ? response.get("status").toString()
+                    : null;
+
+            if ("SUCCESS".equalsIgnoreCase(refundStatus)) {
+                booking.setRefundStatus("COMPLETED");
+                bookingRepository.save(booking);
+                return "Hoàn tiền tự động thành công.";
+            }
+
+            booking.setRefundStatus("FAILED");
+            bookingRepository.save(booking);
+            return "Hoàn tiền tự động thất bại, vui lòng liên hệ hỗ trợ để được hoàn tiền thủ công.";
+
+        } catch (Exception ex) {
+            // Không rõ payment-service đã xử lý tới đâu — giữ PENDING để admin kiểm tra thủ công
+            // thay vì đoán mò là FAILED.
+            return "Yêu cầu hoàn tiền đang chờ xử lý (không kết nối được payment-service).";
+        }
     }
 
     @Override
@@ -721,6 +757,23 @@ public class BookingServiceImpl implements BookingService{
         ResponseEntity<T> response = restTemplate.exchange(
                 url,
                 HttpMethod.GET,
+                entity,
+                responseType
+        );
+
+        return response.getBody();
+    }
+
+    private <T> T internalPost(String url, Object body, Class<T> responseType) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Internal-Secret", internalSecret);
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+
+        HttpEntity<Object> entity = new HttpEntity<>(body, headers);
+
+        ResponseEntity<T> response = restTemplate.exchange(
+                url,
+                HttpMethod.POST,
                 entity,
                 responseType
         );

@@ -16,6 +16,9 @@ public class ServiceAccessFilter extends OncePerRequestFilter {
     @Value("${app.gateway-secret}")
     private String gatewaySecret;
 
+    @Value("${app.internal-secret}")
+    private String internalSecret;
+
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
@@ -38,6 +41,17 @@ public class ServiceAccessFilter extends OncePerRequestFilter {
             return;
         }
 
+        // API hoàn tiền được booking-service gọi nội bộ khi hủy vé đã thanh toán.
+        if (path.matches("^/api/v1/payment/momo/refund/[^/]+$")) {
+            if (!isValidInternalRequest(request)) {
+                reject(response, "Forbidden internal payment API");
+                return;
+            }
+
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         // API tạo thanh toán phải đi qua Gateway.
         if (!isValidGatewayRequest(request)) {
             reject(response, "Forbidden payment API");
@@ -50,6 +64,11 @@ public class ServiceAccessFilter extends OncePerRequestFilter {
     private boolean isValidGatewayRequest(HttpServletRequest request) {
         String secret = request.getHeader("X-Gateway-Secret");
         return gatewaySecret.equals(secret);
+    }
+
+    private boolean isValidInternalRequest(HttpServletRequest request) {
+        String secret = request.getHeader("X-Internal-Secret");
+        return internalSecret.equals(secret);
     }
 
     private void reject(HttpServletResponse response, String message) throws IOException {

@@ -3,6 +3,8 @@ package com.movie.payment_service.controller;
 import com.movie.payment_service.dto.MoMoIpnDTO;
 import com.movie.payment_service.dto.PaymentRequestDTO;
 import com.movie.payment_service.dto.PaymentTransactionSummaryDTO;
+import com.movie.payment_service.dto.RefundRequestDTO;
+import com.movie.payment_service.dto.RefundResponseDTO;
 import com.movie.payment_service.service.MomoService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -51,6 +53,17 @@ public class PaymentController {
             @RequestHeader("X-User-Id") String userId) {
 
         List<PaymentTransactionSummaryDTO> response = moMoService.getMyTransactions(userId);
+        return ResponseEntity.ok(response);
+    }
+
+    // Gọi nội bộ bởi booking-service khi hủy 1 booking đã thanh toán (X-Internal-Secret)
+    @PostMapping("/refund/{bookingId}")
+    public ResponseEntity<RefundResponseDTO> refundPayment(
+            @PathVariable String bookingId,
+            @RequestBody(required = false) RefundRequestDTO request) {
+
+        String reason = request != null ? request.getReason() : null;
+        RefundResponseDTO response = moMoService.refundPayment(bookingId, reason);
         return ResponseEntity.ok(response);
     }
 

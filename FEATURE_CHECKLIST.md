@@ -98,8 +98,15 @@
 - [x] API test giả lập thanh toán thành công (môi trường dev)
 - [ ] Thêm phương thức thanh toán khác (VNPay, ZaloPay, thẻ ngân hàng)
   - → tổng quát hóa field `provider`/`method` trong `PaymentTransaction` — payment_db
-- [ ] Hoàn tiền tự động khi hủy vé
-  - → Entity cần thêm: `RefundTransaction` (paymentTransactionId, amount, reason, status, refundedAt) — payment_db
+- [x] Hoàn tiền tự động khi hủy vé
+  - → Entity đã tạo: `RefundTransaction` (paymentTransactionId, bookingId, amount, reason, status,
+    momoRefundTransId, refundedAt) — payment_db. API nội bộ `POST /api/v1/payment/momo/refund/{bookingId}`
+    (X-Internal-Secret), gọi thật API hoàn tiền MoMo (HMAC signature riêng cho refund). booking-service
+    tự động gọi API này ngay khi hủy 1 booking PAID (`cancelBooking`), cập nhật `refundStatus`:
+    `COMPLETED` (MoMo xác nhận hoàn thành công) / `FAILED` (MoMo từ chối, hoặc giao dịch test không có
+    transId thật) / giữ `PENDING` nếu không gọi được payment-service (network lỗi — không chặn việc hủy
+    vé, cần xử lý thủ công sau). Idempotent: gọi lại API refund cho booking đã hoàn thành công sẽ không
+    hoàn tiền 2 lần.
 - [x] Lịch sử giao dịch thanh toán cho người dùng
   - → không cần entity mới, `PaymentTransaction.userId` đã đủ dữ liệu để query.
     API tại `GET /api/v1/payment/momo/my-transactions`, sắp xếp mới nhất trước.
@@ -188,7 +195,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 36 | 40 |
+| 1 — MVP lõi | 37 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |
@@ -208,7 +215,7 @@
 | `Review` ✅ đã tạo | catalog_db | movieId, userId, rating, comment | đánh giá phim |
 | `Favorite` ✅ đã tạo | catalog_db | userId, movieId | watchlist |
 | `Ticket` ✅ đã tạo | booking_db | bookingSeatId, qrCode, checkedInAt, checkedInBy | vé QR + check-in |
-| `RefundTransaction` | payment_db | paymentTransactionId, amount, reason, status | hoàn tiền |
+| `RefundTransaction` ✅ đã tạo | payment_db | paymentTransactionId, amount, reason, status | hoàn tiền |
 | `Notification` | notification_db (**mới**) | userId, title, content, type, isRead, createdAt | thông báo trong app |
 
 Ghi chú: `notification-service` hiện chưa có database nào — cần khởi tạo schema `notification_db` trước khi thêm entity `Notification`/`NotificationTemplate`.

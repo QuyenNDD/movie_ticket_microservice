@@ -45,6 +45,7 @@ momo:
   access-key: ${MOMO_ACCESS_KEY}
   secret-key: ${MOMO_SECRET_KEY}
   endpoint: ${MOMO_ENDPOINT:https://test-payment.momo.vn/v2/gateway/api/create}
+  refund-endpoint: ${MOMO_REFUND_ENDPOINT:https://test-payment.momo.vn/v2/gateway/api/refund}
   return-url: ${MOMO_RETURN_URL:http://localhost:3000/payment-result}
   notify-url: ${MOMO_NOTIFY_URL}
 
