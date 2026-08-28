@@ -25,4 +25,9 @@ public class CatalogController {
     public Double getSnackPrice(@PathVariable("snackId") String snackId){
         return catalogService.getSnackPrice(snackId);
     }
+
+    @GetMapping("/snack-combos/{comboId}/price")
+    public Double getComboPrice(@PathVariable("comboId") String comboId){
+        return catalogService.getComboPrice(comboId);
+    }
 }

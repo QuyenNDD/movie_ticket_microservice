@@ -25,6 +25,7 @@ public class InternalApiFilter extends OncePerRequestFilter {
         return !(
                 path.matches("/api/v1/catalog/showtimes/.*/seats/.*/price")
                         || path.matches("/api/v1/catalog/snacks/.*/price")
+                        || path.matches("/api/v1/catalog/snack-combos/.*/price")
                         || path.matches("/api/v1/catalog/rooms/internal/.*/seats")
         );
     }

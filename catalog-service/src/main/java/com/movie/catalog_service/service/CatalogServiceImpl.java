@@ -5,6 +5,7 @@ import com.movie.catalog_service.exception.APIException;
 import com.movie.catalog_service.exception.ResourceNotFoundException;
 import com.movie.catalog_service.repository.SeatRepository;
 import com.movie.catalog_service.repository.ShowtimeRepository;
+import com.movie.catalog_service.repository.SnackComboRepository;
 import com.movie.catalog_service.repository.SnackRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,9 @@ public class CatalogServiceImpl implements CatalogService{
 
     @Autowired
     SnackRepository snackRepository;
+
+    @Autowired
+    SnackComboRepository snackComboRepository;
 
 
     @Override
@@ -89,5 +93,17 @@ public class CatalogServiceImpl implements CatalogService{
         }
 
         return snack.getPrice();
+    }
+
+    @Override
+    public Double getComboPrice(String comboId) {
+        SnackCombo combo = snackComboRepository.findById(comboId)
+                .orElseThrow(() -> new ResourceNotFoundException("SnackCombo", "id", comboId));
+
+        if (!Boolean.TRUE.equals(combo.getIsActive())) {
+            throw new APIException("Combo đã dừng bán!");
+        }
+
+        return combo.getPrice();
     }
 }

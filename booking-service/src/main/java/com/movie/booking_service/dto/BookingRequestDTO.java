@@ -23,6 +23,9 @@ public class BookingRequestDTO {
     @Valid
     private List<SnackRequest> snacks;
 
+    @Valid
+    private List<ComboRequest> combos;
+
     @Data
     public static class SeatRequest {
 
@@ -39,6 +42,18 @@ public class BookingRequestDTO {
         @NotNull(message = "Số lượng không được để trống")
         @Min(value = 1, message = "Số lượng phải từ 1 trở lên")
         @Max(value = 20, message = "Mỗi loại snack chỉ được đặt tối đa 20 phần")
+        private Integer quantity;
+    }
+
+    @Data
+    public static class ComboRequest {
+
+        @NotBlank(message = "ID combo không được để trống")
+        private String comboId;
+
+        @NotNull(message = "Số lượng không được để trống")
+        @Min(value = 1, message = "Số lượng phải từ 1 trở lên")
+        @Max(value = 20, message = "Mỗi loại combo chỉ được đặt tối đa 20 phần")
         private Integer quantity;
     }
 }

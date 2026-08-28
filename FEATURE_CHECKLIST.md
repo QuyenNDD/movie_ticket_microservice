@@ -85,8 +85,12 @@
     (body `{qrCode}`), chỉ nhân viên có quyền ADMIN được gọi (gateway chặn ở
     `isAdminEndpoint`). Chặn soát vé lặp lại (đã có `checkedInAt`), chặn soát vé
     thuộc booking đã bị hủy sau khi thanh toán.
-- [ ] Chọn combo bắp nước theo gói ưu đãi
-  - → Entity cần thêm: `SnackCombo` (name, items[], price) — catalog_db
+- [x] Chọn combo bắp nước theo gói ưu đãi
+  - → Entity đã tạo: `SnackCombo` + `SnackComboItem` (name, price, items[snackId,quantity]) —
+    catalog_db. CRUD tại `/api/v1/catalog/snack-combos` (ADMIN), validate giá combo phải
+    thấp hơn tổng giá lẻ các món (đảm bảo đúng nghĩa "ưu đãi"). booking-service: entity
+    `BookingCombo` mới (booking_db), `BookingRequestDTO` nhận thêm `combos[{comboId,quantity}]`
+    tương tự snack lẻ, cộng dồn vào `totalPrice` qua lookup giá nội bộ tại catalog-service.
 
 ### 1.4 Thanh toán
 - [x] Thanh toán qua MoMo (tạo giao dịch, lấy QR/link thanh toán)
@@ -183,7 +187,7 @@
 
 | Giai đoạn | Đã hoàn thành | Tổng số mục |
 |---|---|---|
-| 1 — MVP lõi | 34 | 40 |
+| 1 — MVP lõi | 35 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
 | 4 — Nền tảng kỹ thuật | 4 | 17 |

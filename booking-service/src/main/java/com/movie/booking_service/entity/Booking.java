@@ -48,6 +48,9 @@ public class Booking {
     @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<BookingSnack> bookingSnacks = new ArrayList<>();
 
+    @OneToMany(mappedBy = "booking", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<BookingCombo> bookingCombos = new ArrayList<>();
+
     @PrePersist
     public void prePersist() {
         if (this.id == null){

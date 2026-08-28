@@ -26,6 +26,8 @@ public class BookingResponseDTO {
     // Thêm để gửi mail hiển thị tên snack
     private List<SnackItem> snacks;
 
+    private List<ComboItem> combos;
+
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -43,6 +45,17 @@ public class BookingResponseDTO {
     public static class SnackItem {
         private String snackId;
         private String snackName; // Ví dụ: Bắp rang bơ, Coca
+        private Integer quantity;
+        private Long price; // đơn giá lúc mua
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ComboItem {
+        private String comboId;
+        private String comboName;
         private Integer quantity;
         private Long price; // đơn giá lúc mua
     }

@@ -65,6 +65,7 @@ public class ServiceAccessFilter extends OncePerRequestFilter {
     private boolean isInternalCatalogApi(String path) {
         return path.matches("^/api/v1/catalog/showtimes/[^/]+/seats/[^/]+/price$")
                 || path.matches("^/api/v1/catalog/snacks/[^/]+/price$")
+                || path.matches("^/api/v1/catalog/snack-combos/[^/]+/price$")
                 || path.matches("^/api/v1/catalog/rooms/internal/[^/]+/seats$");
     }
 

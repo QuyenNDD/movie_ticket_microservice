@@ -4,4 +4,6 @@ public interface CatalogService {
     Double getSeatPrice(String showtimeId, String seatId);
 
     Double getSnackPrice(String snackId);
+
+    Double getComboPrice(String comboId);
 }

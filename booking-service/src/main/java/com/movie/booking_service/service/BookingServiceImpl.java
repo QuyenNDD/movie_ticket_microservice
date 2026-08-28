@@ -5,6 +5,7 @@ import com.movie.booking_service.config.ModelMapperConfig;
 import com.movie.booking_service.dto.*;
 import com.movie.booking_service.entity.Booking;
 import com.movie.booking_service.entity.BookingSeat;
+import com.movie.booking_service.entity.BookingCombo;
 import com.movie.booking_service.entity.BookingSnack;
 import com.movie.booking_service.entity.Ticket;
 import com.movie.booking_service.repository.BookingRepository;
@@ -52,6 +53,7 @@ public class BookingServiceImpl implements BookingService{
     private static final long BOOKING_CUTOFF_MINUTES = 15; // Khóa bán vé trước giờ chiếu 15 phút
     private static final int MAX_SEATS_PER_BOOKING = 8;
     private static final int MAX_SNACK_QUANTITY_PER_ITEM = 20;
+    private static final int MAX_COMBO_QUANTITY_PER_ITEM = 20;
 
     @Value("${app.internal-secret}")
     private String internalSecret;
@@ -89,6 +91,7 @@ public class BookingServiceImpl implements BookingService{
         }
 
         validateDuplicateSnacks(request);
+        validateDuplicateCombos(request);
 
         // 4. Check DB: ghế đã thanh toán chưa
         if (bookingRepository.checkIfSeatsArePaid(showtimeId, seatIds)) {
@@ -175,6 +178,34 @@ public class BookingServiceImpl implements BookingService{
                 }
 
                 booking.setBookingSnacks(bookingSnacks);
+            }
+
+            // 7.3 Xử lý combo bắp nước
+            if (request.getCombos() != null && !request.getCombos().isEmpty()) {
+                List<BookingCombo> bookingCombos = new ArrayList<>();
+
+                for (BookingRequestDTO.ComboRequest comboReq : request.getCombos()) {
+                    if (comboReq.getQuantity() == null || comboReq.getQuantity() <= 0) {
+                        throw new RuntimeException("Số lượng combo không hợp lệ!");
+                    }
+                    if (comboReq.getQuantity() > MAX_COMBO_QUANTITY_PER_ITEM) {
+                        throw new RuntimeException("Mỗi loại combo chỉ được đặt tối đa "
+                                + MAX_COMBO_QUANTITY_PER_ITEM + " phần!");
+                    }
+
+                    Double comboPrice = getComboPriceFromCatalog(comboReq.getComboId());
+
+                    BookingCombo combo = new BookingCombo();
+                    combo.setComboId(comboReq.getComboId());
+                    combo.setQuantity(comboReq.getQuantity());
+                    combo.setPriceAtPurchase(comboPrice);
+                    combo.setBooking(booking);
+
+                    bookingCombos.add(combo);
+                    totalPrice += comboPrice * comboReq.getQuantity();
+                }
+
+                booking.setBookingCombos(bookingCombos);
             }
 
             booking.setTotalPrice(totalPrice);
@@ -516,6 +547,7 @@ public class BookingServiceImpl implements BookingService{
 
         List<BookingResponseDTO.SeatItem> seatItems = buildBookingSeatItems(booking);
         List<BookingResponseDTO.SnackItem> snackItems = buildBookingSnackItems(booking);
+        List<BookingResponseDTO.ComboItem> comboItems = buildBookingComboItems(booking);
 
         return BookingResponseDTO.builder()
                 .bookingId(booking.getId())
@@ -525,6 +557,7 @@ public class BookingServiceImpl implements BookingService{
                 .message("Lấy thông tin hóa đơn thành công.")
                 .seats(seatItems)
                 .snacks(snackItems)
+                .combos(comboItems)
                 .cancellationReason(booking.getCancellationReason())
                 .refundStatus(booking.getRefundStatus())
                 .build();
@@ -662,6 +695,18 @@ public class BookingServiceImpl implements BookingService{
 
         if (price == null) {
             throw new RuntimeException("Không lấy được giá bắp nước từ Catalog!");
+        }
+
+        return price;
+    }
+
+    @Override
+    public Double getComboPriceFromCatalog(String comboId) {
+        String url = catalogServiceUrl + "/snack-combos/" + comboId + "/price";
+        Double price = internalGet(url, Double.class);
+
+        if (price == null) {
+            throw new RuntimeException("Không lấy được giá combo từ Catalog!");
         }
 
         return price;
@@ -940,6 +985,30 @@ public class BookingServiceImpl implements BookingService{
         return result;
     }
 
+    private List<BookingResponseDTO.ComboItem> buildBookingComboItems(Booking booking) {
+        List<BookingResponseDTO.ComboItem> result = new ArrayList<>();
+
+        if (booking.getBookingCombos() == null || booking.getBookingCombos().isEmpty()) {
+            return result;
+        }
+
+        for (BookingCombo bookingCombo : booking.getBookingCombos()) {
+            String comboId = bookingCombo.getComboId();
+            String comboName = getComboNameFromCatalog(comboId);
+
+            result.add(
+                    BookingResponseDTO.ComboItem.builder()
+                            .comboId(comboId)
+                            .comboName(comboName)
+                            .quantity(bookingCombo.getQuantity())
+                            .price(toLongMoney(bookingCombo.getPriceAtPurchase()))
+                            .build()
+            );
+        }
+
+        return result;
+    }
+
     private Map<String, String> getSeatNameMapByShowtimeId(String showtimeId) {
         ShowtimeResponseDTO showtimeInfo = getShowtimeInfoOnly(showtimeId);
 
@@ -994,6 +1063,23 @@ public class BookingServiceImpl implements BookingService{
         }
     }
 
+    private String getComboNameFromCatalog(String comboId) {
+        try {
+            String url = catalogServiceUrl + "/snack-combos/" + comboId;
+
+            Map<String, Object> body = internalGet(url, Map.class);
+
+            if (body == null || body.get("name") == null) {
+                return comboId;
+            }
+
+            return body.get("name").toString();
+
+        } catch (Exception e) {
+            return comboId;
+        }
+    }
+
     private Long toLongMoney(Double value) {
         if (value == null) {
             return 0L;
@@ -1022,6 +1108,29 @@ public class BookingServiceImpl implements BookingService{
 
         if (distinctSnackCount != snackIds.size()) {
             throw new RuntimeException("Danh sách bắp nước có món bị trùng!");
+        }
+    }
+
+    private void validateDuplicateCombos(BookingRequestDTO request) {
+        if (request.getCombos() == null || request.getCombos().isEmpty()) {
+            return;
+        }
+
+        List<String> comboIds = request.getCombos()
+                .stream()
+                .map(BookingRequestDTO.ComboRequest::getComboId)
+                .toList();
+
+        for (String comboId : comboIds) {
+            if (comboId == null || comboId.isBlank()) {
+                throw new RuntimeException("ID combo không hợp lệ!");
+            }
+        }
+
+        long distinctComboCount = comboIds.stream().distinct().count();
+
+        if (distinctComboCount != comboIds.size()) {
+            throw new RuntimeException("Danh sách combo có món bị trùng!");
         }
     }
 }
