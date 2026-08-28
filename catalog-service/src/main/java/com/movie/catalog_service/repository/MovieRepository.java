@@ -16,4 +16,6 @@ public interface MovieRepository extends JpaRepository<Movie, String> {
     boolean existsByTitle(@NotBlank(message = "Name of movie not null") String title);
     Page<Movie> findByStatus(String status, Pageable pageable);
     Page<Movie> findByTitleContainingIgnoreCase(String title, Pageable pageable);
+    Page<Movie> findByStatusNot(String status, Pageable pageable);
+    Page<Movie> findByTitleContainingIgnoreCaseAndStatusNot(String title, String status, Pageable pageable);
 }

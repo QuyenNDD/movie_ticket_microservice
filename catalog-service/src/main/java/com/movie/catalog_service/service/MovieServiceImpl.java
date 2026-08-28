@@ -28,6 +28,10 @@ import java.util.Objects;
 
 @Service
 public class MovieServiceImpl implements MovieService{
+    // Trạng thái đánh dấu phim đã bị "xóa mềm" (deleteMovie) — loại khỏi danh
+    // sách/tìm kiếm mặc định nhưng vẫn có thể tra cứu qua /movies/status/STOPPED
+    private static final String DELETED_STATUS = "STOPPED";
+
     @Autowired
     MovieRepository movieRepository;
 
@@ -80,7 +84,7 @@ public class MovieServiceImpl implements MovieService{
                 ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageDetails = PageRequest.of(pageNumber, pageSize, sortByAndOrder);
-        Page<Movie> moviePage = movieRepository.findAll(pageDetails);
+        Page<Movie> moviePage = movieRepository.findByStatusNot(DELETED_STATUS, pageDetails);
         List<Movie> movies = moviePage.getContent();
         List<MovieResponseDTO> movieResponseDTOS = movies.stream()
                 .map(movie -> modelMapper.map(movie, MovieResponseDTO.class))
@@ -145,7 +149,7 @@ public class MovieServiceImpl implements MovieService{
                 : Sort.by(sortBy).descending();
         Pageable pageDetails = PageRequest.of(pageNumber, pageSize, sortByAndOrder);
 
-        Page<Movie> moviePage = movieRepository.findByTitleContainingIgnoreCase(title, pageDetails);
+        Page<Movie> moviePage = movieRepository.findByTitleContainingIgnoreCaseAndStatusNot(title, DELETED_STATUS, pageDetails);
         List<Movie> movies = moviePage.getContent();
 
         List<MovieResponseDTO> movieResponseDTOS = movies.stream()
@@ -219,7 +223,7 @@ public class MovieServiceImpl implements MovieService{
         Movie existingMovie = movieRepository.findById(movieId)
                 .orElseThrow(() -> new ResourceNotFoundException("Movie", "id", movieId));
 
-        existingMovie.setStatus("STOPPED");
+        existingMovie.setStatus(DELETED_STATUS);
 
         Movie savedMovie = movieRepository.save(existingMovie);
 

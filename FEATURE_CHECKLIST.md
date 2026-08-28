@@ -29,6 +29,9 @@
 
 ### 1.2 Danh mục phim & rạp
 - [x] CRUD phim (thêm/sửa/xóa mềm/xem)
+  - → xóa mềm (`status="STOPPED"`) đã được lọc khỏi `getAllMovies`/`getMovieByTitle`
+    (dùng `findByStatusNot`/`findByTitleContainingIgnoreCaseAndStatusNot`); vẫn
+    tra cứu được qua `/movies/status/STOPPED` hoặc `/movies/{id}` cho admin.
 - [x] Tìm kiếm phim theo tên
 - [x] Lọc phim theo trạng thái (đang chiếu/sắp chiếu)
 - [x] Cập nhật poster, trailer phim
