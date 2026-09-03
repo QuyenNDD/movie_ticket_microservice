@@ -204,7 +204,20 @@
   - → 2 test `@SpringBootTest contextLoads` mặc định (booking + payment) đánh `@Disabled` vì cần MySQL/Redis/RabbitMQ thật.
 - [ ] Integration test luồng đặt vé end-to-end
 - [ ] CI/CD pipeline tự động (build, test, deploy)
-- [ ] Container hóa đầy đủ 6 service trong `docker-compose.yml` (hiện chỉ có api-gateway)
+- [x] Container hóa đầy đủ 6 service trong `docker-compose.yml`
+  - → Mỗi service có `Dockerfile` multi-stage (`maven:3.9-eclipse-temurin-21` build →
+    `eclipse-temurin:21-jre-alpine` runtime, chạy non-root, `-XX:MaxRAMPercentage=75`) + `.dockerignore`.
+    Image ~370–440MB/service.
+  - → `docker-compose.yml` viết lại: `name: movie-ticket`, 6 service + MySQL + Redis + RabbitMQ,
+    healthcheck + `depends_on: {condition: service_healthy}`, URL nội bộ dùng DNS tên container,
+    chỉ lộ cổng **8080** (gateway) và **15672** (RabbitMQ UI). `docker/mysql/init.sql` tạo sẵn 5 DB.
+    `JPA_SHOW_SQL=false`. Volume `mysql-data` cho persistence.
+  - → Sửa xung đột biến môi trường: api-gateway route dùng `*_SERVICE_URI` (base host, không path),
+    tách khỏi `*_SERVICE_URL` (có path) mà các service dùng gọi nội bộ. `.env.example` viết lại
+    theo hướng compose (chỉ chứa secret).
+  - → **Kiểm chứng**: `docker compose up -d --build` → cả 9 container `healthy`. Test E2E qua gateway:
+    đăng ký → login (JWT) → `/me` → `my-bookings` (JWT + gateway secret xuyên container) → list phim
+    công khai đều OK; route không token trả 401.
 - [x] Health check endpoint (Spring Actuator)
   - → Cả 6 service thêm `spring-boot-starter-actuator`, expose `health,info` (KHÔNG expose
     env/beans/mappings...). `management.endpoint.health.show-details: always` +
@@ -256,7 +269,7 @@
 | 1 — MVP lõi | 39 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
-| 4 — Nền tảng kỹ thuật | 9 | 17 |
+| 4 — Nền tảng kỹ thuật | 10 | 17 |
 | 5 — Mở rộng nâng cao | 0 | 5 |
 
 **Nhận xét:** Luồng lõi kỹ thuật khó nhất (giữ ghế, đồng thời, thanh toán MoMo thật) đã hoàn thiện tốt. Khoảng trống lớn nhất hiện nay là **trải nghiệm sau khi đặt vé** (lịch sử vé, hủy/hoàn tiền, QR check-in) và **nền tảng production-readiness** (test, CI/CD, observability, bảo mật secret).

@@ -15,5 +15,5 @@ RUN addgroup -S app && adduser -S app -G app
 COPY --from=build /app/target/*.jar app.jar
 USER app
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:InitialRAMPercentage=50"
-EXPOSE 8080
+EXPOSE 8081
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

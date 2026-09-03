@@ -15,19 +15,21 @@ spring:
           enabled: false
     gateway:
       routes:
+        # Đích route là base host:port (KHÔNG kèm path) — biến *_SERVICE_URI riêng,
+        # tách khỏi *_SERVICE_URL (có path) mà các service dùng để gọi nội bộ.
         - id: auth-service
-          uri: ${AUTH_SERVICE_URL:http://host.docker.internal:8083}
+          uri: ${AUTH_SERVICE_URI:http://host.docker.internal:8083}
           predicates:
             - Path=/api/v1/auth/**
 
         - id: catalog-service-public-get
-          uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
+          uri: ${CATALOG_SERVICE_URI:http://host.docker.internal:8081}
           predicates:
             - Path=/api/v1/catalog/movies/**,/api/v1/catalog/cinemas/**,/api/v1/catalog/showtimes/**,/api/v1/catalog/reviews/**
             - Method=GET
 
         - id: catalog-service-protected-get
-          uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
+          uri: ${CATALOG_SERVICE_URI:http://host.docker.internal:8081}
           predicates:
             - Path=/api/v1/catalog/rooms/**,/api/v1/catalog/snacks/**,/api/v1/catalog/snack-combos/**,/api/v1/catalog/favorites/**
             - Method=GET
@@ -35,7 +37,7 @@ spring:
             - AuthenticationFilter
 
         - id: catalog-service-protected-write
-          uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
+          uri: ${CATALOG_SERVICE_URI:http://host.docker.internal:8081}
           predicates:
             - Path=/api/v1/catalog/**
             - Method=POST,PUT,PATCH,DELETE
@@ -43,21 +45,21 @@ spring:
             - AuthenticationFilter
 
         - id: booking-service
-          uri: ${BOOKING_SERVICE_URL:http://host.docker.internal:8082}
+          uri: ${BOOKING_SERVICE_URI:http://host.docker.internal:8082}
           predicates:
             - Path=/api/v1/booking/**
           filters:
             - AuthenticationFilter
 
         - id: payment-service
-          uri: ${PAYMENT_SERVICE_URL:http://host.docker.internal:8084}
+          uri: ${PAYMENT_SERVICE_URI:http://host.docker.internal:8084}
           predicates:
             - Path=/api/v1/payment/**
           filters:
             - AuthenticationFilter
 
         - id: notification-service
-          uri: ${NOTIFICATION_SERVICE_URL:http://host.docker.internal:8085}
+          uri: ${NOTIFICATION_SERVICE_URI:http://host.docker.internal:8085}
           predicates:
             - Path=/api/v1/notifications/**
           filters:
