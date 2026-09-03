@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 @Component
 public class InternalApiFilter extends OncePerRequestFilter {
@@ -39,12 +41,22 @@ public class InternalApiFilter extends OncePerRequestFilter {
 
         String secret = request.getHeader("X-Internal-Secret");
 
-        if (!internalSecret.equals(secret)) {
+        if (!secretMatches(internalSecret, secret)) {
             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
             response.getWriter().write("Forbidden internal API");
             return;
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    // So sánh chuỗi bí mật theo thời gian hằng số để tránh lộ thông tin qua timing attack.
+    private static boolean secretMatches(String expected, String provided) {
+        if (expected == null || provided == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8),
+                provided.getBytes(StandardCharsets.UTF_8));
     }
 }

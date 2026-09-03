@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 @Component
 public class ServiceAccessFilter extends OncePerRequestFilter {
@@ -57,13 +59,21 @@ public class ServiceAccessFilter extends OncePerRequestFilter {
     }
 
     private boolean isValidGatewayRequest(HttpServletRequest request) {
-        String secret = request.getHeader("X-Gateway-Secret");
-        return gatewaySecret.equals(secret);
+        return secretMatches(gatewaySecret, request.getHeader("X-Gateway-Secret"));
     }
 
     private boolean isValidInternalRequest(HttpServletRequest request) {
-        String secret = request.getHeader("X-Internal-Secret");
-        return internalSecret.equals(secret);
+        return secretMatches(internalSecret, request.getHeader("X-Internal-Secret"));
+    }
+
+    // So sánh chuỗi bí mật theo thời gian hằng số để tránh lộ thông tin qua timing attack.
+    private static boolean secretMatches(String expected, String provided) {
+        if (expected == null || provided == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8),
+                provided.getBytes(StandardCharsets.UTF_8));
     }
 
     private void reject(HttpServletResponse response, String message) throws IOException {
