@@ -45,7 +45,8 @@ public class RoomServiceImpl implements RoomService{
     @Autowired
     RestTemplate restTemplate;
 
-    private static final String BOOKING_SERVICE_BASE_URL = "http://localhost:8082/api/v1/booking";
+    @Value("${app.booking-service-url:http://localhost:8082/api/v1/booking}")
+    private String bookingServiceUrl;
 
     private static final Set<String> VALID_SEAT_TYPES = Set.of(
             "NORMAL",
@@ -71,7 +72,7 @@ public class RoomServiceImpl implements RoomService{
         HttpEntity<List<String>> entity = new HttpEntity<>(showtimeIds, headers);
 
         ResponseEntity<Boolean> response = restTemplate.exchange(
-                BOOKING_SERVICE_BASE_URL + "/internal/showtimes/has-active-bookings",
+                bookingServiceUrl + "/internal/showtimes/has-active-bookings",
                 HttpMethod.POST,
                 entity,
                 Boolean.class

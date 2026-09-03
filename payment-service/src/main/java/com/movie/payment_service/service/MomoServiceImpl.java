@@ -61,7 +61,8 @@ public class MomoServiceImpl implements MomoService {
     @Value("${app.payment-retry.max-retry-count:10}")
     private int maxRetryCount;
 
-    private static final String BOOKING_SERVICE_BASE_URL = "http://localhost:8082/api/v1/booking";
+    @Value("${app.booking-service-url:http://localhost:8082/api/v1/booking}")
+    private String bookingServiceUrl;
 
     @Value("${app.auth-service-url:http://localhost:8083/api/v1/auth}")
     private String authServiceUrl;
@@ -643,7 +644,7 @@ public class MomoServiceImpl implements MomoService {
         HttpEntity<String> entity = new HttpEntity<>(null, headers);
 
         ResponseEntity<Map> response = restTemplate.exchange(
-                BOOKING_SERVICE_BASE_URL + "/" + bookingId,
+                bookingServiceUrl + "/" + bookingId,
                 HttpMethod.GET,
                 entity,
                 Map.class
