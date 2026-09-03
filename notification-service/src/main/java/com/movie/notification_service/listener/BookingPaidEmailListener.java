@@ -3,9 +3,11 @@ package com.movie.notification_service.listener;
 import com.movie.notification_service.dto.BookingPaidEmailEvent;
 import com.movie.notification_service.service.EmailService;
 import com.movie.notification_service.service.NotificationService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 public class BookingPaidEmailListener {
 
@@ -20,20 +22,16 @@ public class BookingPaidEmailListener {
     @RabbitListener(queues = "${app.rabbitmq.booking-paid-queue}")
     public void handleBookingPaidEmailEvent(BookingPaidEmailEvent event) {
         try {
-            System.out.println(">>> Received booking paid email event. bookingId="
-                    + event.getBookingId());
+            log.info("Received booking paid email event. bookingId={}", event.getBookingId());
 
             emailService.sendBookingPaidEmail(event);
             createInAppNotification(event);
 
-            System.out.println(">>> Email event processed successfully. bookingId="
-                    + event.getBookingId());
+            log.info("Email event processed successfully. bookingId={}", event.getBookingId());
 
         } catch (Exception ex) {
-            System.err.println(">>> Gửi mail thất bại, RabbitMQ sẽ retry. bookingId="
-                    + event.getBookingId()
-                    + ", error="
-                    + ex.getMessage());
+            log.error("Gửi mail thất bại, RabbitMQ sẽ retry. bookingId={}, error={}",
+                    event.getBookingId(), ex.getMessage());
 
             // Bắt buộc throw lại để RabbitMQ biết xử lý thất bại và retry
             throw ex;
@@ -54,10 +52,8 @@ public class BookingPaidEmailListener {
             notificationService.createNotification(event.getUserId(), title, content, "BOOKING_PAID");
 
         } catch (Exception ex) {
-            System.err.println(">>> Tạo thông báo in-app thất bại (không ảnh hưởng việc gửi mail). bookingId="
-                    + event.getBookingId()
-                    + ", error="
-                    + ex.getMessage());
+            log.error("Tạo thông báo in-app thất bại (không ảnh hưởng việc gửi mail). bookingId={}, error={}",
+                    event.getBookingId(), ex.getMessage());
         }
     }
 }

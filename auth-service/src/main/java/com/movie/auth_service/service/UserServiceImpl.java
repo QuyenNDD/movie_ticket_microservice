@@ -19,6 +19,7 @@ import com.movie.auth_service.repository.PasswordResetTokenRepository;
 import com.movie.auth_service.repository.RefreshTokenRepository;
 import com.movie.auth_service.repository.UserRepository;
 import com.movie.auth_service.security.CustomUserDetails;
+import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +40,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Service
 public class UserServiceImpl implements UserService{
     @Autowired
@@ -117,7 +119,7 @@ public class UserServiceImpl implements UserService{
             sendEmailVerification(user.getEmail(), verifyLink);
         } catch (Exception ex) {
             // Không để lỗi gửi mail chặn đăng ký; user vẫn tạo được, có thể xác minh sau.
-            System.err.println(">>> Gửi email xác minh thất bại: " + ex.getMessage());
+            log.error("Gửi email xác minh thất bại: {}", ex.getMessage());
         }
 
         return "Đăng ký người dùng thành công!";
@@ -208,7 +210,7 @@ public class UserServiceImpl implements UserService{
             } catch (Exception ex) {
                 // Không để lỗi gửi mail rò rỉ ra ngoài (tránh lộ email có tồn tại hay không);
                 // token vẫn được lưu, người dùng có thể yêu cầu gửi lại nếu cần.
-                System.err.println(">>> Gửi email đặt lại mật khẩu thất bại: " + ex.getMessage());
+                log.error("Gửi email đặt lại mật khẩu thất bại: {}", ex.getMessage());
             }
         });
     }

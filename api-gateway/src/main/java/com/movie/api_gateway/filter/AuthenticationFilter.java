@@ -2,6 +2,8 @@ package com.movie.api_gateway.filter;
 
 import com.movie.api_gateway.util.JwtUtils;
 import io.jsonwebtoken.Claims;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilter;
@@ -16,6 +18,8 @@ import reactor.core.publisher.Mono;
 
 @Component
 public class AuthenticationFilter extends AbstractGatewayFilterFactory<AuthenticationFilter.Config> {
+
+    private static final Logger log = LoggerFactory.getLogger(AuthenticationFilter.class);
 
     @Autowired
     private JwtUtils jwtUtils;
@@ -35,11 +39,9 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
         return (exchange, chain) -> {
             ServerHttpRequest request = exchange.getRequest();
 
-            System.out.println("========== AUTHENTICATION FILTER RUNNING ==========");
-            System.out.println("Method: " + request.getMethod());
-            System.out.println("Path: " + request.getURI().getPath());
-            System.out.println("Has Authorization: " + request.getHeaders().containsKey("Authorization"));
-            System.out.println("===================================================");
+            log.debug("AuthenticationFilter: {} {} (hasAuthorization={})",
+                    request.getMethod(), request.getURI().getPath(),
+                    request.getHeaders().containsKey("Authorization"));
 
             if (request.getMethod() == HttpMethod.OPTIONS) {
                 return chain.filter(exchange);
@@ -80,11 +82,10 @@ public class AuthenticationFilter extends AbstractGatewayFilterFactory<Authentic
                     .header("X-Gateway-Secret", gatewaySecret)
                     .build();
 
-            System.out.println("========== API GATEWAY FORWARD HEADERS ==========");
-            System.out.println("Forward X-User-Id: " + mutatedRequest.getHeaders().getFirst("X-User-Id"));
-            System.out.println("Forward X-User-Role: " + mutatedRequest.getHeaders().getFirst("X-User-Role"));
-            System.out.println("Forward X-Gateway-Secret: " + maskSecret(mutatedRequest.getHeaders().getFirst("X-Gateway-Secret")));
-            System.out.println("=================================================");
+            log.debug("Gateway forward headers: X-User-Id={}, X-User-Role={}, X-Gateway-Secret={}",
+                    mutatedRequest.getHeaders().getFirst("X-User-Id"),
+                    mutatedRequest.getHeaders().getFirst("X-User-Role"),
+                    maskSecret(mutatedRequest.getHeaders().getFirst("X-Gateway-Secret")));
             return chain.filter(exchange.mutate().request(mutatedRequest).build());
         };
     }

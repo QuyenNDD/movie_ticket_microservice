@@ -3,9 +3,11 @@ package com.movie.booking_service.listener;
 import com.movie.booking_service.dto.BookingConfirmRequestEvent;
 import com.movie.booking_service.publisher.BookingConfirmResultPublisher;
 import com.movie.booking_service.service.BookingService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Service;
 
+@Slf4j
 @Service
 public class BookingConfirmRequestListener {
 
@@ -22,13 +24,13 @@ public class BookingConfirmRequestListener {
         try {
             bookingService.confirmPayment(event.getUserId(), event.getBookingId());
 
-            System.out.println(">>> Booking confirmed via RabbitMQ. bookingId=" + event.getBookingId());
+            log.info("Booking confirmed via RabbitMQ. bookingId={}", event.getBookingId());
 
             resultPublisher.publishSuccess(event.getPaymentId(), event.getBookingId());
 
         } catch (Exception ex) {
-            System.err.println(">>> Confirm booking thất bại. bookingId=" + event.getBookingId()
-                    + ", error=" + ex.getMessage());
+            log.error("Confirm booking thất bại. bookingId={}, error={}",
+                    event.getBookingId(), ex.getMessage());
 
             resultPublisher.publishFailure(event.getPaymentId(), event.getBookingId(), ex.getMessage());
         }

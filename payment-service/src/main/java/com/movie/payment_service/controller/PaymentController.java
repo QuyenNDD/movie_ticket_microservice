@@ -6,6 +6,7 @@ import com.movie.payment_service.dto.PaymentTransactionSummaryDTO;
 import com.movie.payment_service.dto.RefundRequestDTO;
 import com.movie.payment_service.dto.RefundResponseDTO;
 import com.movie.payment_service.service.MomoService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/v1/payment/momo")
 public class PaymentController {
@@ -38,7 +40,7 @@ public class PaymentController {
     @PostMapping("/ipn")
     public ResponseEntity<Void> handleMoMoIpn(@RequestBody MoMoIpnDTO ipnData) {
 
-        System.out.println(">>> Nhận được tín hiệu IPN từ MoMo cho đơn hàng: " + ipnData.getOrderId());
+        log.info("Nhận được tín hiệu IPN từ MoMo cho đơn hàng: {}", ipnData.getOrderId());
 
         // Gọi Service xử lý
         moMoService.processIpn(ipnData);

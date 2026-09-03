@@ -15,6 +15,7 @@ import com.movie.payment_service.publisher.BookingPaidEmailPublisher;
 import com.movie.payment_service.repository.PaymentTransactionRepository;
 import com.movie.payment_service.repository.RefundTransactionRepository;
 import com.movie.payment_service.util.HmacSHA256Util;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -31,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
 
+@Slf4j
 @Service
 public class MomoServiceImpl implements MomoService {
 
@@ -148,8 +150,7 @@ public class MomoServiceImpl implements MomoService {
                     existingPayment.setNextRetryAt(null);
                     paymentTransactionRepository.save(existingPayment);
                     createNewQrForExpiredPayment = true;
-                    System.out.println(">>> QR cũ đã hết hạn. Tạo payment mới cho bookingId="
-                            + bookingId);
+                    log.info("QR cũ đã hết hạn. Tạo payment mới cho bookingId={}", bookingId);
                 } else {
                     return existingPayment.getPayUrl();
                 }
@@ -178,10 +179,8 @@ public class MomoServiceImpl implements MomoService {
         String signature = hmacSHA256(rawSignature, secretKey);
 
 
-        System.out.println("========== MOMO RAW SIGNATURE ==========");
-        System.out.println(rawSignature);
-        System.out.println("========== MOMO SIGNATURE ==========");
-        System.out.println(signature);
+        log.debug("MoMo rawSignature={}", rawSignature);
+        log.debug("MoMo signature={}", signature);
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("partnerCode", partnerCode);
@@ -258,14 +257,14 @@ public class MomoServiceImpl implements MomoService {
                 .orElseThrow(() -> new RuntimeException("Không tìm thấy payment transaction cho orderId: " + dto.getOrderId()));
 
         if (PaymentStatus.SUCCESS.equals(payment.getStatus())) {
-            System.out.println(">>> Payment orderId " + dto.getOrderId() + " đã SUCCESS trước đó. Bỏ qua IPN lặp.");
+            log.info("Payment orderId {} đã SUCCESS trước đó. Bỏ qua IPN lặp.", dto.getOrderId());
             return;
         }
 
         if (dto.getTransId() != null
                 && !dto.getTransId().isBlank()
                 && paymentTransactionRepository.existsByTransIdAndStatus(dto.getTransId(), PaymentStatus.SUCCESS)) {
-            System.out.println(">>> MoMo transId " + dto.getTransId() + " đã xử lý thành công trước đó. Bỏ qua IPN lặp.");
+            log.info("MoMo transId {} đã xử lý thành công trước đó. Bỏ qua IPN lặp.", dto.getTransId());
             return;
         }
 
@@ -286,10 +285,8 @@ public class MomoServiceImpl implements MomoService {
             payment.setNextRetryAt(null);
             paymentTransactionRepository.save(payment);
 
-            System.out.println(">>> MoMo trả thanh toán thất bại. bookingId="
-                    + payment.getBookingId()
-                    + ", resultCode="
-                    + resultCode);
+            log.info("MoMo trả thanh toán thất bại. bookingId={}, resultCode={}",
+                    payment.getBookingId(), resultCode);
 
             return;
         }
@@ -371,7 +368,7 @@ public class MomoServiceImpl implements MomoService {
 
             sendBookingPaidEmailIfNeeded(payment);
 
-            System.out.println(">>> Booking đã PAID trước đó. Đánh dấu payment SUCCESS.");
+            log.info("Booking đã PAID trước đó. Đánh dấu payment SUCCESS.");
             return;
         }
 
@@ -417,7 +414,7 @@ public class MomoServiceImpl implements MomoService {
 
         confirmBookingAndMarkSuccess(payment);
 
-        System.out.println(">>> [THÀNH CÔNG] Đã ghi nhận thanh toán MoMo cho hóa đơn " + bookingId);
+        log.info("Đã ghi nhận thanh toán MoMo cho hóa đơn {}", bookingId);
     }
 
     @Override
@@ -745,19 +742,15 @@ public class MomoServiceImpl implements MomoService {
                             .build()
             );
 
-            System.out.println(">>> [ĐÃ GỬI] Yêu cầu confirm booking "
-                    + payment.getBookingId()
-                    + " cho user "
-                    + payment.getUserId());
+            log.info("Đã gửi yêu cầu confirm booking {} cho user {}",
+                    payment.getBookingId(), payment.getUserId());
 
         } catch (Exception ex) {
             payment.setLastError("Không gửi được yêu cầu confirm booking qua RabbitMQ: " + ex.getMessage());
             paymentTransactionRepository.save(payment);
 
-            System.err.println(">>> [LỖI GỬI] Không publish được yêu cầu confirm booking. bookingId="
-                    + payment.getBookingId()
-                    + ", error="
-                    + ex.getMessage());
+            log.error("Không publish được yêu cầu confirm booking. bookingId={}, error={}",
+                    payment.getBookingId(), ex.getMessage());
         }
     }
 
@@ -772,8 +765,8 @@ public class MomoServiceImpl implements MomoService {
                 .orElse(null);
 
         if (payment == null) {
-            System.err.println(">>> Nhận kết quả confirm booking nhưng không tìm thấy payment. paymentId="
-                    + event.getPaymentId());
+            log.error("Nhận kết quả confirm booking nhưng không tìm thấy payment. paymentId={}",
+                    event.getPaymentId());
             return;
         }
 
@@ -785,10 +778,8 @@ public class MomoServiceImpl implements MomoService {
             payment.setLastError(event.getErrorMessage());
             paymentTransactionRepository.save(payment);
 
-            System.err.println(">>> [CẦN RETRY] Booking-service báo confirm thất bại. bookingId="
-                    + payment.getBookingId()
-                    + ", error="
-                    + event.getErrorMessage());
+            log.error("Booking-service báo confirm thất bại (cần retry). bookingId={}, error={}",
+                    payment.getBookingId(), event.getErrorMessage());
             return;
         }
 
@@ -804,10 +795,8 @@ public class MomoServiceImpl implements MomoService {
 
         sendBookingPaidEmailIfNeeded(payment);
 
-        System.out.println(">>> [THÀNH CÔNG] Đã confirm booking "
-                + payment.getBookingId()
-                + " cho user "
-                + payment.getUserId());
+        log.info("Đã confirm booking {} cho user {}",
+                payment.getBookingId(), payment.getUserId());
     }
 
     private long calculateBackoffMinutes(int retryCount) {
@@ -855,15 +844,14 @@ public class MomoServiceImpl implements MomoService {
             payment.setEmailError(null);
             paymentTransactionRepository.save(payment);
 
-            System.out.println(">>> Đã publish email event qua RabbitMQ. bookingId="
-                    + payment.getBookingId());
+            log.info("Đã publish email event qua RabbitMQ. bookingId={}", payment.getBookingId());
 
         } catch (Exception ex) {
             payment.setEmailSent(false);
             payment.setEmailError(ex.getMessage());
             paymentTransactionRepository.save(payment);
 
-            System.err.println(">>> Publish email event thất bại: " + ex.getMessage());
+            log.error("Publish email event thất bại: {}", ex.getMessage());
         }
     }
 
@@ -908,12 +896,8 @@ public class MomoServiceImpl implements MomoService {
 
         paymentTransactionRepository.save(payment);
 
-        System.err.println(">>> [PAYMENT_REVIEW] bookingId="
-                + payment.getBookingId()
-                + ", orderId="
-                + payment.getOrderId()
-                + ", reason="
-                + reason);
+        log.error("[PAYMENT_REVIEW] bookingId={}, orderId={}, reason={}",
+                payment.getBookingId(), payment.getOrderId(), reason);
     }
 
     private void markRefundRequired(
@@ -933,12 +917,8 @@ public class MomoServiceImpl implements MomoService {
 
         paymentTransactionRepository.save(payment);
 
-        System.err.println(">>> [REFUND_REQUIRED] bookingId="
-                + payment.getBookingId()
-                + ", orderId="
-                + payment.getOrderId()
-                + ", reason="
-                + reason);
+        log.error("[REFUND_REQUIRED] bookingId={}, orderId={}, reason={}",
+                payment.getBookingId(), payment.getOrderId(), reason);
     }
     private List<BookingPaidEmailEvent.SeatItem> buildSeatItemsFromBookingDetail(
             Map<String, Object> bookingDetail

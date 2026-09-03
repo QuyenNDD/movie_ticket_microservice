@@ -16,6 +16,7 @@ import com.movie.catalog_service.repository.RoomRepository;
 import com.movie.catalog_service.repository.SeatRepository;
 import com.movie.catalog_service.repository.ShowtimeRepository;
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +31,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class RoomServiceImpl implements RoomService{
     @Autowired
@@ -424,7 +426,7 @@ public class RoomServiceImpl implements RoomService{
                 ShowtimeStatus.CANCELLED
         );
 
-        System.out.println(">>> Đã hủy " + cancelledCount + " suất chiếu tương lai của phòng " + roomId);
+        log.info("Đã hủy {} suất chiếu tương lai của phòng {}", cancelledCount, roomId);
 
         room.setIsActive(false);
 

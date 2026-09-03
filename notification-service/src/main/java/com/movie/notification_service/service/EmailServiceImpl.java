@@ -5,6 +5,7 @@ import com.movie.notification_service.dto.BookingPaidEmailRequest;
 import com.movie.notification_service.dto.EmailVerificationRequest;
 import com.movie.notification_service.dto.PasswordResetEmailRequest;
 import jakarta.mail.internet.MimeMessage;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Service;
 import java.text.NumberFormat;
 import java.util.Locale;
 
+@Slf4j
 @Service
 public class EmailServiceImpl implements EmailService {
 
@@ -39,7 +41,7 @@ public class EmailServiceImpl implements EmailService {
 
             mailSender.send(message);
 
-            System.out.println(">>> Đã gửi email thanh toán thành công tới: " + request.getToEmail());
+            log.info("Đã gửi email thanh toán thành công tới: {}", request.getToEmail());
 
         } catch (Exception e) {
             throw new RuntimeException("Gửi email xác nhận thanh toán thất bại: " + e.getMessage(), e);
@@ -109,7 +111,7 @@ public class EmailServiceImpl implements EmailService {
 
             mailSender.send(message);
 
-            System.out.println(">>> Đã gửi email đặt lại mật khẩu tới: " + request.getToEmail());
+            log.info("Đã gửi email đặt lại mật khẩu tới: {}", request.getToEmail());
 
         } catch (Exception e) {
             throw new RuntimeException("Gửi email đặt lại mật khẩu thất bại: " + e.getMessage(), e);
@@ -147,7 +149,7 @@ public class EmailServiceImpl implements EmailService {
 
             mailSender.send(message);
 
-            System.out.println(">>> Đã gửi email xác minh tới: " + request.getToEmail());
+            log.info("Đã gửi email xác minh tới: {}", request.getToEmail());
 
         } catch (Exception e) {
             throw new RuntimeException("Gửi email xác minh thất bại: " + e.getMessage(), e);

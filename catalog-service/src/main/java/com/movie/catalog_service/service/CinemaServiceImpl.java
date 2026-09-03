@@ -12,6 +12,7 @@ import com.movie.catalog_service.exception.ResourceNotFoundException;
 import com.movie.catalog_service.repository.CinemaRepository;
 import com.movie.catalog_service.repository.RoomRepository;
 import com.movie.catalog_service.repository.ShowtimeRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -25,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 public class CinemaServiceImpl implements CinemaService{
     @Autowired
@@ -181,7 +183,7 @@ public class CinemaServiceImpl implements CinemaService{
                 ShowtimeStatus.CANCELLED
         );
 
-        System.out.println(">>> Đã hủy " + cancelledCount + " suất chiếu tương lai của rạp " + cinemaId);
+        log.info("Đã hủy {} suất chiếu tương lai của rạp {}", cancelledCount, cinemaId);
     }
 
     private void deactivateRoomsOfCinema(String cinemaId) {

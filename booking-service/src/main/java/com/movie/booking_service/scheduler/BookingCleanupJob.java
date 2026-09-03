@@ -3,6 +3,7 @@ package com.movie.booking_service.scheduler;
 import com.movie.booking_service.entity.Booking;
 import com.movie.booking_service.repository.BookingRepository;
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Component
 public class BookingCleanupJob {
 
@@ -33,9 +35,7 @@ public class BookingCleanupJob {
 
             bookingRepository.saveAll(expiredBookings);
 
-            // Log này sẽ xuất hiện trong tab Console của IntelliJ/Eclipse
-            System.out.println(">>> [HỆ THỐNG] Đã hủy " + expiredBookings.size() +
-                    " hóa đơn quá hạn thanh toán 10 phút.");
+            log.info("Đã hủy {} hóa đơn quá hạn thanh toán 10 phút.", expiredBookings.size());
         }
     }
 }

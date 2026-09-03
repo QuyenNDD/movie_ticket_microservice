@@ -11,6 +11,8 @@ import com.movie.booking_service.repository.BookingRepository;
 import com.movie.booking_service.repository.BookingSeatRepository;
 import com.movie.booking_service.repository.TicketRepository;
 import org.modelmapper.ModelMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -30,6 +32,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class BookingServiceImpl implements BookingService{
+
+    private static final Logger log = LoggerFactory.getLogger(BookingServiceImpl.class);
+
     @Autowired
     private BookingRepository bookingRepository;
 
@@ -747,8 +752,7 @@ public class BookingServiceImpl implements BookingService{
                     bookingRepository.save(booking);
                 } catch (Exception ex) {
                     // Không đánh dấu reminderSent nếu gửi thất bại — sẽ tự thử lại ở lượt chạy tiếp theo
-                    System.err.println(">>> Gửi nhắc lịch thất bại cho booking " + booking.getId()
-                            + ": " + ex.getMessage());
+                    log.error("Gửi nhắc lịch thất bại cho booking {}: {}", booking.getId(), ex.getMessage());
                 }
             }
         }

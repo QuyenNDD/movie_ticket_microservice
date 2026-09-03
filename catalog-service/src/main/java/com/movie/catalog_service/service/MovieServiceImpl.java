@@ -10,6 +10,7 @@ import com.movie.catalog_service.exception.ResourceNotFoundException;
 import com.movie.catalog_service.repository.MovieRepository;
 import com.movie.catalog_service.repository.ShowtimeRepository;
 import com.movie.catalog_service.service.file.FileUploadService;
+import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -26,6 +27,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
+@Slf4j
 @Service
 public class MovieServiceImpl implements MovieService{
     // Trạng thái đánh dấu phim đã bị "xóa mềm" (deleteMovie) — loại khỏi danh
@@ -244,6 +246,6 @@ public class MovieServiceImpl implements MovieService{
                 ShowtimeStatus.CANCELLED
         );
 
-        System.out.println(">>> Đã hủy " + cancelledCount + " suất chiếu tương lai của phim " + movieId);
+        log.info("Đã hủy {} suất chiếu tương lai của phim {}", cancelledCount, movieId);
     }
 }

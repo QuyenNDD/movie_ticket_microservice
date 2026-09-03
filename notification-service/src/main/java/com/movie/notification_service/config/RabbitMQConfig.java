@@ -1,6 +1,7 @@
 package com.movie.notification_service.config;
 
 import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
@@ -13,6 +14,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+@Slf4j
 @Configuration
 public class RabbitMQConfig {
 
@@ -27,24 +29,24 @@ public class RabbitMQConfig {
 
     @PostConstruct
     public void init() {
-        System.out.println(">>> RabbitMQConfig loaded successfully");
+        log.info("RabbitMQConfig loaded successfully");
     }
 
     @Bean
     public DirectExchange movieTicketExchange() {
-        System.out.println(">>> Creating RabbitMQ exchange: " + exchangeName);
+        log.info("Creating RabbitMQ exchange: {}", exchangeName);
         return new DirectExchange(exchangeName, true, false);
     }
 
     @Bean
     public Queue bookingPaidQueue() {
-        System.out.println(">>> Creating RabbitMQ queue: " + bookingPaidQueue);
+        log.info("Creating RabbitMQ queue: {}", bookingPaidQueue);
         return new Queue(bookingPaidQueue, true);
     }
 
     @Bean
     public Binding bookingPaidBinding() {
-        System.out.println(">>> Creating RabbitMQ binding: " + bookingPaidRoutingKey);
+        log.info("Creating RabbitMQ binding: {}", bookingPaidRoutingKey);
         return BindingBuilder
                 .bind(bookingPaidQueue())
                 .to(movieTicketExchange())
@@ -66,9 +68,9 @@ public class RabbitMQConfig {
     @Bean
     public ApplicationRunner rabbitAdminInitializer(RabbitAdmin rabbitAdmin) {
         return args -> {
-            System.out.println(">>> Forcing RabbitMQ declare exchange/queue/binding...");
+            log.info("Forcing RabbitMQ declare exchange/queue/binding...");
             rabbitAdmin.initialize();
-            System.out.println(">>> RabbitMQ declare completed.");
+            log.info("RabbitMQ declare completed.");
         };
     }
 }
