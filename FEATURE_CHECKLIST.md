@@ -175,7 +175,23 @@
 - [x] `.gitignore` bảo vệ file secret (`.env`, `.idea`...)
 - [ ] Quản lý secret tập trung khi deploy (Vault / AWS Secrets Manager...)
 - [ ] Service discovery (Eureka/Consul) thay vì URL cứng giữa các service
-- [ ] Circuit breaker / retry / timeout chuẩn hóa (Resilience4j) cho gọi REST nội bộ
+- [x] Circuit breaker / retry / timeout chuẩn hóa (Resilience4j) cho gọi REST nội bộ
+  - → 4 service gọi REST nội bộ (auth, catalog, booking, payment) thêm `resilience4j-spring-boot3` +
+    `spring-boot-starter-aop`. `ResilientHttpInterceptor` (ClientHttpRequestInterceptor gắn vào
+    `RestTemplate`) bọc mọi lời gọi có path `/api/v1/...`:
+    - **Timeout**: đã có sẵn (connect 3s / read 5s ở `RestTemplateConfig`/`ModelMapperConfig`).
+    - **Circuit breaker** `internal`: sliding-window 20, mở mạch khi ≥50% lỗi (tối thiểu 10 call),
+      `wait-duration-in-open-state` 15s → khi service đích chết thì fail nhanh (~4ms) thay vì treo.
+    - **Retry** `internal`: chỉ thử lại method GET (idempotent), 3 lần cách nhau 500ms;
+      `ignore-exceptions: CallNotPermittedException` để không retry khi mạch đã mở.
+    - Lời gọi ra MoMo (payment) KHÔNG bị bọc (path khác `/api/v1/`) — lỗi bên thứ ba không làm mở
+      mạch lời gọi nội bộ.
+  - → `GlobalExceptionHandler` của booking/payment/catalog: map `ResourceAccessException` +
+    `CallNotPermittedException` → **HTTP 503** (trước đây connection lỗi trả 400/500 gây hiểu nhầm là lỗi input).
+  - → Kiểm chứng runtime: bắn 20 request tới booking khi catalog chết — 3 request đầu ~1s (retry),
+    sau đó circuit breaker mở, các request tiếp theo trả 503 trong ~4ms; sau 15s thử half-open lại.
+  - → Đồng thời: đánh `@Disabled` toàn bộ 6 test `@SpringBootTest contextLoads` mặc định (cần hạ tầng thật) →
+    `mvn test` cả 6 service giờ đều BUILD SUCCESS.
 - [x] Unit test cho logic nghiệp vụ (đặc biệt `BookingServiceImpl`, `MomoServiceImpl`)
   - → `BookingServiceImplTest` (21 test, Mockito): `confirmPayment` (not found / sai chủ / idempotent khi đã PAID /
     booking CANCELLED / hết hạn giữ chỗ / happy path sinh vé QR), `cancelBooking` (PENDING không hoàn tiền /
@@ -240,7 +256,7 @@
 | 1 — MVP lõi | 39 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
-| 4 — Nền tảng kỹ thuật | 8 | 17 |
+| 4 — Nền tảng kỹ thuật | 9 | 17 |
 | 5 — Mở rộng nâng cao | 0 | 5 |
 
 **Nhận xét:** Luồng lõi kỹ thuật khó nhất (giữ ghế, đồng thời, thanh toán MoMo thật) đã hoàn thiện tốt. Khoảng trống lớn nhất hiện nay là **trải nghiệm sau khi đặt vé** (lịch sử vé, hủy/hoàn tiền, QR check-in) và **nền tảng production-readiness** (test, CI/CD, observability, bảo mật secret).

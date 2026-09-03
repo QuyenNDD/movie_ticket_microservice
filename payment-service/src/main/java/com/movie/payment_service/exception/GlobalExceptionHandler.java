@@ -1,11 +1,13 @@
 package com.movie.payment_service.exception;
 
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.time.LocalDateTime;
@@ -32,6 +34,22 @@ public class GlobalExceptionHandler {
         body.put("providerResponse", ex.getResponseBodyAsString());
 
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
+    }
+
+    // Service phụ thuộc (booking/auth) không kết nối được, timeout, hoặc circuit breaker đang mở → 503.
+    @ExceptionHandler({ResourceAccessException.class, CallNotPermittedException.class})
+    public ResponseEntity<Map<String, Object>> handleDownstreamUnavailable(
+            Exception ex,
+            HttpServletRequest request
+    ) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.SERVICE_UNAVAILABLE.value());
+        body.put("error", "Service Unavailable");
+        body.put("message", "Một dịch vụ phụ thuộc đang tạm thời không phản hồi, vui lòng thử lại sau ít phút.");
+        body.put("path", request.getRequestURI());
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
     @ExceptionHandler(RuntimeException.class)
