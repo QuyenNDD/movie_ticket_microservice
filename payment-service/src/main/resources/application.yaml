@@ -69,3 +69,14 @@ app:
     booking-confirm-request-routing-key: booking.confirm.request
     booking-confirm-result-queue: payment.booking.confirm.result.queue
     booking-confirm-result-routing-key: payment.booking.confirm.result
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true

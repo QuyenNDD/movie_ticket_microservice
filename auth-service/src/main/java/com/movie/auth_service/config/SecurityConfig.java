@@ -73,7 +73,9 @@ public class SecurityConfig {
                                         "/api/v1/auth/internal/users/**",
                                         "/v3/api-docs/**",
                                         "/swagger-ui/**",
-                                        "/swagger-ui.html"
+                                        "/swagger-ui.html",
+                                        "/actuator/health/**",
+                                        "/actuator/info"
                                 ).permitAll()
                                 .anyRequest().authenticated() // Bất kỳ API nào khác đều phải có JWT
                 );

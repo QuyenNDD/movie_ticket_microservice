@@ -58,3 +58,14 @@ app:
     exchange: movie.ticket.exchange
     booking-paid-queue: notification.booking.paid.queue
     booking-paid-routing-key: notification.booking.paid
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true

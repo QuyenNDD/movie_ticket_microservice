@@ -189,7 +189,17 @@
 - [ ] Integration test luồng đặt vé end-to-end
 - [ ] CI/CD pipeline tự động (build, test, deploy)
 - [ ] Container hóa đầy đủ 6 service trong `docker-compose.yml` (hiện chỉ có api-gateway)
-- [ ] Health check endpoint (Spring Actuator)
+- [x] Health check endpoint (Spring Actuator)
+  - → Cả 6 service thêm `spring-boot-starter-actuator`, expose `health,info` (KHÔNG expose
+    env/beans/mappings...). `management.endpoint.health.show-details: always` +
+    `probes.enabled: true` → có thêm `/actuator/health/liveness` và `/actuator/health/readiness`
+    (dùng cho Docker/K8s sau này).
+    - Verify runtime: catalog/auth/booking `/actuator/health` = UP; booking hiển thị component
+      `db` + `redis` + `rabbit`; auth để `/actuator/health/**`, `/actuator/info` vào `permitAll`
+      của `SecurityConfig` (các API nghiệp vụ vẫn 401). `/actuator/env` trả 404 (không expose).
+    - api-gateway: tắt `spring.cloud.discovery.client.health-indicator`/`composite-indicator`
+      (chưa dùng service discovery) để health không lẫn trạng thái "UNKNOWN".
+  - → Tiện tay xóa block `feign:` chết trong `booking-service/application.yml` (đã gỡ Feign ở commit trước).
 - [ ] Logging tập trung (ELK/Loki)
 - [ ] Metrics & alerting (Prometheus/Grafana)
 - [x] Tài liệu API tự động (Swagger/OpenAPI)
@@ -230,7 +240,7 @@
 | 1 — MVP lõi | 39 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
-| 4 — Nền tảng kỹ thuật | 7 | 17 |
+| 4 — Nền tảng kỹ thuật | 8 | 17 |
 | 5 — Mở rộng nâng cao | 0 | 5 |
 
 **Nhận xét:** Luồng lõi kỹ thuật khó nhất (giữ ghế, đồng thời, thanh toán MoMo thật) đã hoàn thiện tốt. Khoảng trống lớn nhất hiện nay là **trải nghiệm sau khi đặt vé** (lịch sử vé, hủy/hoàn tiền, QR check-in) và **nền tảng production-readiness** (test, CI/CD, observability, bảo mật secret).
