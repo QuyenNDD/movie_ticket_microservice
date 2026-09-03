@@ -185,7 +185,9 @@
 - [ ] Metrics & alerting (Prometheus/Grafana)
 - [ ] Tài liệu API tự động (Swagger/OpenAPI)
 - [ ] HTTPS/SSL cho môi trường production
-- [ ] Dọn dead code (`BookingProcessService` — logic đã bị comment, không còn dùng)
+- [x] Dọn dead code (`BookingProcessService`, `TicketEmailMessage`, `EmailListenerService`,
+  `RouteValidator`, Feign `CatalogClient` không dùng — đã xóa; gộp 2 route catalog trùng nhau
+  trong `api-gateway/application.yaml`)
 
 ---
 
@@ -211,7 +213,7 @@
 | 1 — MVP lõi | 39 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
-| 4 — Nền tảng kỹ thuật | 4 | 17 |
+| 4 — Nền tảng kỹ thuật | 5 | 17 |
 | 5 — Mở rộng nâng cao | 0 | 5 |
 
 **Nhận xét:** Luồng lõi kỹ thuật khó nhất (giữ ghế, đồng thời, thanh toán MoMo thật) đã hoàn thiện tốt. Khoảng trống lớn nhất hiện nay là **trải nghiệm sau khi đặt vé** (lịch sử vé, hủy/hoàn tiền, QR check-in) và **nền tảng production-readiness** (test, CI/CD, observability, bảo mật secret).
