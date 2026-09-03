@@ -176,7 +176,16 @@
 - [ ] Quản lý secret tập trung khi deploy (Vault / AWS Secrets Manager...)
 - [ ] Service discovery (Eureka/Consul) thay vì URL cứng giữa các service
 - [ ] Circuit breaker / retry / timeout chuẩn hóa (Resilience4j) cho gọi REST nội bộ
-- [ ] Unit test cho logic nghiệp vụ (đặc biệt `BookingServiceImpl`, `MomoServiceImpl`)
+- [x] Unit test cho logic nghiệp vụ (đặc biệt `BookingServiceImpl`, `MomoServiceImpl`)
+  - → `BookingServiceImplTest` (21 test, Mockito): `confirmPayment` (not found / sai chủ / idempotent khi đã PAID /
+    booking CANCELLED / hết hạn giữ chỗ / happy path sinh vé QR), `cancelBooking` (PENDING không hoàn tiền /
+    PAID + suất chiếu đã bắt đầu / auto-refund SUCCESS→COMPLETED / bị từ chối→FAILED / mất kết nối→giữ PENDING),
+    `getMyBookings` (tính `expiresInSeconds`), `getTickets` + `checkInTicket` (các nhánh bảo mật/trạng thái).
+  - → `MomoServiceImplTest` (14 test): `refundPayment` (not found / chưa SUCCESS / idempotent / transId test không
+    hợp lệ→FAILED / MoMo chấp nhận→SUCCESS + lưu momoRefundTransId / MoMo từ chối→FAILED / lỗi mạng→FAILED),
+    `handleBookingConfirmResult` (payment null / đã SUCCESS / confirm fail giữ trạng thái / confirm ok set paidAt),
+    `confirmBookingAndMarkSuccess` (dưới giới hạn retry→publish / chạm giới hạn→PAYMENT_REVIEW / publish lỗi→lastError).
+  - → 2 test `@SpringBootTest contextLoads` mặc định (booking + payment) đánh `@Disabled` vì cần MySQL/Redis/RabbitMQ thật.
 - [ ] Integration test luồng đặt vé end-to-end
 - [ ] CI/CD pipeline tự động (build, test, deploy)
 - [ ] Container hóa đầy đủ 6 service trong `docker-compose.yml` (hiện chỉ có api-gateway)
@@ -213,7 +222,7 @@
 | 1 — MVP lõi | 39 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
-| 4 — Nền tảng kỹ thuật | 5 | 17 |
+| 4 — Nền tảng kỹ thuật | 6 | 17 |
 | 5 — Mở rộng nâng cao | 0 | 5 |
 
 **Nhận xét:** Luồng lõi kỹ thuật khó nhất (giữ ghế, đồng thời, thanh toán MoMo thật) đã hoàn thiện tốt. Khoảng trống lớn nhất hiện nay là **trải nghiệm sau khi đặt vé** (lịch sử vé, hủy/hoàn tiền, QR check-in) và **nền tảng production-readiness** (test, CI/CD, observability, bảo mật secret).
