@@ -192,7 +192,15 @@
 - [ ] Health check endpoint (Spring Actuator)
 - [ ] Logging tập trung (ELK/Loki)
 - [ ] Metrics & alerting (Prometheus/Grafana)
-- [ ] Tài liệu API tự động (Swagger/OpenAPI)
+- [x] Tài liệu API tự động (Swagger/OpenAPI)
+  - → Mỗi service backend (auth, catalog, booking, payment, notification) thêm
+    `springdoc-openapi-starter-webmvc-ui` + `OpenApiConfig` (title/version/mô tả + security scheme
+    `bearerAuth` JWT). Swagger UI tại `http://localhost:<port>/swagger-ui.html`, spec JSON tại
+    `/v3/api-docs` — gọi trực tiếp vào cổng service (8081-8085), không qua gateway.
+    Đã kiểm chứng runtime: catalog (8081), auth (8083), booking (8082) — UI trả 200, các API
+    nghiệp vụ vẫn bị filter/security chặn như cũ (401/403). auth-service bổ sung `/v3/api-docs/**`,
+    `/swagger-ui/**` vào `permitAll` của `SecurityConfig`.
+  - → api-gateway chưa gộp docs (chưa làm aggregation) — mở Swagger riêng từng service.
 - [ ] HTTPS/SSL cho môi trường production
 - [x] Dọn dead code (`BookingProcessService`, `TicketEmailMessage`, `EmailListenerService`,
   `RouteValidator`, Feign `CatalogClient` không dùng — đã xóa; gộp 2 route catalog trùng nhau
@@ -222,7 +230,7 @@
 | 1 — MVP lõi | 39 | 40 |
 | 2 — Kinh doanh & tăng trưởng | 0 | 5 |
 | 3 — Quản trị & vận hành | 0 | 5 |
-| 4 — Nền tảng kỹ thuật | 6 | 17 |
+| 4 — Nền tảng kỹ thuật | 7 | 17 |
 | 5 — Mở rộng nâng cao | 0 | 5 |
 
 **Nhận xét:** Luồng lõi kỹ thuật khó nhất (giữ ghế, đồng thời, thanh toán MoMo thật) đã hoàn thiện tốt. Khoảng trống lớn nhất hiện nay là **trải nghiệm sau khi đặt vé** (lịch sử vé, hủy/hoàn tiền, QR check-in) và **nền tảng production-readiness** (test, CI/CD, observability, bảo mật secret).
