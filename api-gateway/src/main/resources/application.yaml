@@ -35,14 +35,6 @@ spring:
           filters:
             - AuthenticationFilter
 
-        - id: catalog-service-user-protected
-          uri: ${CATALOG_SERVICE_URL:http://host.docker.internal:8081}
-          predicates:
-            - Path=/api/v1/catalog/**
-            - Method=POST,PUT,PATCH,DELETE
-          filters:
-            - AuthenticationFilter
-
         - id: booking-service
           uri: ${BOOKING_SERVICE_URL:http://host.docker.internal:8082}
           predicates:

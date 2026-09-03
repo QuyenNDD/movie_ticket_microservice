@@ -1,6 +1,5 @@
 package com.movie.booking_service.service;
 
-import com.movie.booking_service.client.CatalogClient;
 import com.movie.booking_service.config.ModelMapperConfig;
 import com.movie.booking_service.dto.*;
 import com.movie.booking_service.entity.Booking;
