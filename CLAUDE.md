@@ -3,6 +3,7 @@
 File này được đọc tự động vào đầu mỗi phiên làm việc với Claude Code. Đây là quy tắc bắt buộc, phải tuân thủ trong suốt phiên.
 
 ## 1. Đầu phiên
+- Đọc `DEPLOYMENT_ROADMAP.md` — kim chỉ nam xuyên phiên: mục tiêu dự án, phương pháp deploy đã chốt, lộ trình + ô tick tiến độ, và việc TIẾP THEO cần làm. Bám theo hướng trong file này.
 - Đọc file `SESSION_SUMMARY_<ngày gần nhất>.md` (nếu có) để nắm bối cảnh phiên trước đã làm gì, đang dở việc gì.
 - Đọc `FEATURE_CHECKLIST.md` để biết chức năng nào đã xong (✅), chức năng nào đang thiếu (⬜).
 

@@ -142,3 +142,43 @@ Dùng `git add -p` để tách hunk khi 1 file dính nhiều nhóm commit (vd. `
 
 ### Giai đoạn 2 (kinh doanh) / Giai đoạn 3 (quản trị rạp)
 - Chưa bắt đầu. Khi mở Giai đoạn 2, ưu tiên **Voucher/mã giảm giá** (gắn tự nhiên vào luồng `Booking` đã hoàn chỉnh), rồi loyalty points.
+
+---
+
+# Bổ sung — phiên 2 cùng ngày (2026-09-03): định hướng deploy + container hóa
+
+## 8. Chốt mục tiêu và hướng đi
+
+Trao đổi với user, làm rõ mục tiêu thật của dự án: **portfolio để đi xin việc, cần triển khai lên môi trường production hoặc gần giống production** (có link công khai chạy thật).
+
+Kết luận đã thống nhất:
+- **Deploy trước, KHÔNG làm Giai đoạn 2/3 vội.** Lý do: Giai đoạn 1 gần xong, phần khó nhất đã làm; giá trị biên của việc thêm tính năng đang giảm; một repo không deploy = vô hình với nhà tuyển dụng; deploy ép đối mặt đúng các câu hỏi phỏng vấn (service discovery, secret, xử lý downstream chết, HTTPS...).
+- **KHÔNG làm frontend** — dùng Swagger + Postman collection + README walkthrough làm mặt demo.
+- **KHÔNG làm Kubernetes** — overkill, tốn tiền.
+- Host: 2 phương án $0 — **Oracle Cloud Always Free ARM** (24GB RAM free vĩnh viễn, cần thẻ xác minh) ưu tiên 1; **PC + Cloudflare Tunnel** dự phòng. Chưa chốt.
+- Sau khi deploy xong mới chọn 1–2 mục Giai đoạn 2/3 mở ra kỹ năng khác: Voucher, dashboard doanh thu, hoặc RBAC nhân viên.
+
+→ Toàn bộ lộ trình + ô tick tiến độ được ghi vào file mới **`DEPLOYMENT_ROADMAP.md`** (đọc file này đầu mỗi phiên).
+
+## 9. `2fe58e3` feat: container hóa đầy đủ + docker-compose full stack + README
+
+- **6 `Dockerfile` multi-stage**: build `maven:3.9-eclipse-temurin-21` → runtime `eclipse-temurin:21-jre-alpine`, chạy non-root (user `app`), `-XX:MaxRAMPercentage=75`, `COPY --from=build /app/target/*.jar`. Layer cache deps qua `dependency:go-offline`. Kèm `.dockerignore` (loại `target/`). Image ~370–440MB/service.
+- **`docker-compose.yml` viết lại hoàn toàn**: `name: movie-ticket`, anchor `x-service-common` cho `depends_on`/`restart`/`networks`. 6 service + `mysql:8.0` + `redis:7-alpine` + `rabbitmq:3-management-alpine`. Healthcheck cho tất cả + `depends_on: {condition: service_healthy}` (infra → service → gateway). URL nội bộ hardcode theo DNS tên container. `JPA_SHOW_SQL=false`. Chỉ expose **8080** (gateway) + **15672** (RabbitMQ UI). Volume `mysql-data`.
+- **`docker/mysql/init.sql`**: tạo sẵn `auth_db`, `catalog_db`, `booking_db`, `payment_db`, `notification_db` (utf8mb4).
+- **Sửa xung đột env var** (nợ kỹ thuật cũ): `api-gateway/application.yaml` các route đổi `${AUTH_SERVICE_URL:...}` → `${AUTH_SERVICE_URI:...}` (base host, không path) — tách hẳn khỏi `*_SERVICE_URL` (có path) mà auth/catalog/booking/payment dùng để gọi REST nội bộ. Compose set cả 2 loại rõ ràng.
+- **`.env.example` viết lại**: chỉ còn secret (MySQL pw, JWT/GATEWAY/INTERNAL secret, Cloudinary, MoMo, Mail). URL nội bộ do compose lo. Phần DB URL cho chạy-ngoài-docker để dạng comment.
+- **`README.md` mới**: mô tả, sơ đồ kiến trúc mermaid (flowchart services + infra + MoMo + RabbitMQ), bảng tech stack, mục "Key technical highlights" (seat locking, MoMo, async retry, e-tickets, defence in depth), hướng dẫn `docker compose up -d --build`, cách chạy 1 service ngoài docker, tests, repo layout, roadmap. **Viết tiếng Anh** (chuẩn portfolio).
+- **Kiểm chứng runtime**: `docker compose up -d --build` → **9/9 container `healthy`**. Test E2E qua gateway `http://localhost:8080`: đăng ký (`userName`/`email`/`password`) → login (`userName`/`password`) → nhận JWT → `/api/v1/auth/me` (gateway verify JWT + inject `X-User-Id`) → `/api/v1/booking/my-bookings` (JWT + gateway secret xuyên container) → list phim công khai — tất cả 200; route không token → 401. Log các service sạch (chỉ 1 lỗi email do credential Gmail giả — đã bắt, không chặn đăng ký).
+- Sau verify: `docker compose down -v` (xóa volume test).
+
+## 10. File tạo/sửa trong phiên 2
+
+- **Mới**: `DEPLOYMENT_ROADMAP.md` (lộ trình + ô tick, đọc đầu mỗi phiên), `README.md`, `docker-compose.yml` (viết lại), `docker/mysql/init.sql`, 6 × `Dockerfile`, 6 × `.dockerignore`.
+- **Sửa**: `api-gateway/src/main/resources/application.yaml` (`*_SERVICE_URI`), `.env.example` (viết lại), `FEATURE_CHECKLIST.md` (tick "container hóa", Giai đoạn 4: 9→10/17), `SESSION_SUMMARY_2026-09-03.md` (file này), `CLAUDE.md` (thêm dòng đọc `DEPLOYMENT_ROADMAP.md` đầu phiên).
+
+## 11. Việc TIẾP THEO (đầu phiên sau, theo `DEPLOYMENT_ROADMAP.md` Giai đoạn A còn lại)
+
+1. **CI — GitHub Actions**: workflow build + `mvn test` cả 6 service khi push/PR; thêm badge vào README.
+2. **Postman collection**: full luồng đặt vé (đăng ký → login → phim → suất chiếu → giữ ghế → thanh toán MoMo sandbox → vé QR), export `.json` vào repo.
+3. **Dọn secret default hardcode** trong các `application.yaml`/`.yml` đã commit (`JWT_SECRET`/`GATEWAY_SECRET`/`INTERNAL_SECRET` đang để giá trị hex thật làm default) → placeholder vô hại hoặc bỏ default.
+4. Sang **Giai đoạn B**: hỏi user chốt host (Oracle Cloud cần thẻ / PC + Cloudflare Tunnel), rồi deploy.
