@@ -218,3 +218,37 @@ Grep xác nhận: không còn chuỗi `a3f8c9e1` / `8b7c6d5e` / `VmVyeVNlY3JldEt
 ## 20. Trạng thái: Giai đoạn A XONG
 
 Toàn bộ checklist Giai đoạn A (roadmap) đã tick. Việc TIẾP THEO: **Giai đoạn B — Deploy** — cần user chốt host (Oracle Cloud Always Free ARM cần thẻ xác minh, hoặc PC + Cloudflare Tunnel).
+
+---
+
+## 21. Tất cả commit đã push lên `origin/main` trong phiên (thứ tự thời gian)
+
+| Commit | Nội dung |
+|---|---|
+| `f093b0e` | refactor: gộp filter nội bộ catalog-service, xóa `InternalApiFilter` |
+| `85dd6d6` | refactor: externalize danh sách CORS origin ở api-gateway |
+| `5c89e56` | test: unit test cho `holdSeats` (booking) và `processIpn` (MoMo) — 32 + 25 test |
+| `94df960` | docs: tổng kết phần 1 (dọn nợ kỹ thuật) |
+| `bd4bed2` | ci: GitHub Actions build + test cả 6 service (matrix, `./mvnw verify` JDK 21) + chmod +x 6 `mvnw` + badge |
+| `77d002a` | docs: tick CI (run đầu xanh 6/6) |
+| `faa624b` | ci: `paths-ignore: '**.md'` — commit markdown-only không chạy CI |
+| `b7d0e14` | feat: Postman collection luồng đặt vé đầu-cuối (`postman/`, verify Newman 31/31) |
+| `20a90b5` | docs: tick Postman collection |
+| `2669deb` | chore: bỏ default hardcode của secret trong yaml (fail-fast) — verify compose 9/9 + Newman 31/31 |
+| `3f54132` | docs: tick "dọn secret default" + Giai đoạn A xong |
+
+(Ngoài ra 2 commit từ phiên 2026-09-03 chưa push — `d1e0dcf` DEPLOYMENT_ROADMAP — được đẩy kèm ở lần push đầu.)
+
+## 22. Bàn Giai đoạn B — chưa chốt
+
+Trao đổi cuối phiên về host:
+- Thẻ dùng cho Oracle chỉ để **xác minh danh tính** (giữ tạm ~25k rồi hoàn) — **không gỡ được thẻ** sau đăng ký (Oracle yêu cầu luôn có 1 payment method), nhưng **không cần gỡ**: chống phí = **không bấm "Upgrade to Pay As You Go"** + chỉ tạo tài nguyên trong danh sách Always Free (VM.Standard.A1.Flex ≤ 4 OCPU/24GB, ≤ 200GB block volume, không tạo Load Balancer trả phí).
+- 2 lựa chọn còn để ngỏ: **Oracle Cloud ARM** (link 24/7, rủi ro phí ~0 nếu không upgrade) vs **PC + Cloudflare Tunnel** (rủi ro 0 tuyệt đối, chỉ online khi PC bật).
+- **User chưa chốt** — đầu phiên sau quyết định rồi bắt đầu Giai đoạn B.
+
+## 23. Trạng thái môi trường cuối phiên
+
+- Docker: đã `docker compose down` (containers + network xóa; volume `mysql-data` giữ lại — có chứa dữ liệu test từ các lần verify Newman: user `pmt_admin_*`, `pmt_user_*`, cinema/room/movie/showtime demo. Vô hại; xóa bằng `docker compose down -v` nếu muốn sạch).
+- Không còn service Java nào chạy local.
+- Toàn bộ image `movie-ticket-*` đã build (rebuild ở phiên 4) — `docker compose up -d` (không `--build`) sẽ nhanh.
+- `git status` sạch, `main` đồng bộ `origin/main`, CI xanh.
