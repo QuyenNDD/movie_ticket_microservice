@@ -1,0 +1,713 @@
+{
+  "info": {
+    "_postman_id": "9f2c1a7e-4d3b-4c9a-9b1e-movieticket01",
+    "name": "Movie Ticket Microservices — E2E Flow",
+    "description": "Luồng đặt vé đầu-cuối qua api-gateway (http://localhost:8080).\n\n**Thứ tự chạy (Collection Runner / Newman):**\n1. `0 · Admin — seed data` — tạo rạp / phòng / phim / suất chiếu. Cần user có role ADMIN (xem mô tả folder).\n2. `1 · Auth (user)` — đăng ký + đăng nhập user thường.\n3. `2 · Browse catalog` — xem phim, lịch chiếu, sơ đồ ghế (tự nhặt 2 ghế trống).\n4. `3 · Hold seats & pay` — giữ ghế → giả lập thanh toán (hoặc tạo QR MoMo thật) → chờ PAID → lấy vé QR.\n5. `4 · Post-booking` — lịch sử đặt vé, giao dịch, soát vé (ADMIN), hủy + hoàn tiền.\n\nBiến động (`bookingId`, `showtimeId`, token...) được test script tự lưu vào collection variables, các request sau tự dùng lại.\n\nAuth mặc định: `Bearer {{userToken}}`. Request công khai override thành no-auth; request quản trị override thành `Bearer {{adminToken}}`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{userToken}}", "type": "string" }]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Sinh 1 hậu tố ngẫu nhiên cho phiên chạy để đăng ký không trùng tên",
+          "// (pm.variables cho phép override bằng --env-var runId=... khi chạy Newman)",
+          "if (!pm.variables.get('runId')) {",
+          "  pm.collectionVariables.set('runId', String(Date.now()).slice(-6));",
+          "}",
+          "// Ngày mai (yyyy-MM-dd) + mốc 19:00:00 cho suất chiếu — dùng ở nhiều request",
+          "const d = new Date(Date.now() + 24 * 3600 * 1000);",
+          "const pad = (n) => String(n).padStart(2, '0');",
+          "const day = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;",
+          "if (!pm.collectionVariables.get('showDate')) pm.collectionVariables.set('showDate', day);",
+          "if (!pm.collectionVariables.get('showtimeStart')) pm.collectionVariables.set('showtimeStart', day + ' 19:00:00');"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "runId", "value": "" },
+    { "key": "adminUserName", "value": "pmt_admin" },
+    { "key": "adminEmail", "value": "" },
+    { "key": "adminPassword", "value": "Passw0rd!" },
+    { "key": "userName", "value": "pmt_user" },
+    { "key": "userEmail", "value": "" },
+    { "key": "userPassword", "value": "Passw0rd!" },
+    { "key": "adminToken", "value": "" },
+    { "key": "userToken", "value": "" },
+    { "key": "userRefreshToken", "value": "" },
+    { "key": "userId", "value": "" },
+    { "key": "cinemaId", "value": "" },
+    { "key": "roomId", "value": "" },
+    { "key": "movieId", "value": "" },
+    { "key": "showtimeId", "value": "" },
+    { "key": "showDate", "value": "" },
+    { "key": "showtimeStart", "value": "" },
+    { "key": "roomBody", "value": "" },
+    { "key": "bookingId", "value": "" },
+    { "key": "seatId1", "value": "" },
+    { "key": "seatId2", "value": "" },
+    { "key": "qrCode", "value": "" },
+    { "key": "paidPollCount", "value": "0" }
+  ],
+  "item": [
+    {
+      "name": "0 · Admin — seed data (needs ADMIN role)",
+      "description": "API `POST /auth/register` luôn tạo role `USER`. Không có cách tự đăng ký ADMIN.\n\n**Cách nâng quyền ADMIN** (một lần, sau khi chạy `Register admin`):\n```\ndocker exec -i mysql-db mysql -uroot -p1234 auth_db \\\n  -e \"UPDATE users SET role='ADMIN' WHERE user_name='pmt_admin_<runId>';\"\n```\n(`<runId>` là hậu tố phiên — xem collection variable `runId` sau khi chạy request đầu.)\nRồi chạy lại `Login admin` để lấy token có quyền ADMIN.\n\nNếu đã có sẵn dữ liệu phim/suất chiếu trong DB, có thể bỏ qua cả folder này và tự set biến `showtimeId`.",
+      "item": [
+        {
+          "name": "Register admin",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userName\": \"{{adminUserName}}_{{runId}}\",\n  \"email\": \"{{adminUserName}}_{{runId}}@example.com\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('đăng ký admin (201) hoặc đã tồn tại (400)', () => {",
+                  "  pm.expect([201, 400]).to.include(pm.response.code);",
+                  "});",
+                  "console.log('Nâng quyền:  docker exec -i mysql-db mysql -uroot -p1234 auth_db -e \"UPDATE users SET role=\\'ADMIN\\' WHERE user_name=\\'' + pm.variables.get('adminUserName') + '_' + pm.variables.get('runId') + '\\';\"');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login admin",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userName\": \"{{adminUserName}}_{{runId}}\",\n  \"password\": \"{{adminPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('adminToken', b.accessToken);",
+                  "pm.test('user này có role ADMIN', () => {",
+                  "  pm.expect(b.role, 'Chưa nâng quyền — chạy lệnh UPDATE users SET role=ADMIN rồi login lại').to.eql('ADMIN');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create cinema",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/catalog/cinemas", "host": ["{{baseUrl}}"], "path": ["api", "v1", "catalog", "cinemas"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"CGV Demo {{runId}}\",\n  \"address\": \"123 Nguyen Trai\",\n  \"city\": \"Ho Chi Minh\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('tạo rạp 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('cinemaId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create room (5x8, hàng D=VIP, hàng E=COUPLE)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/catalog/rooms", "host": ["{{baseUrl}}"], "path": ["api", "v1", "catalog", "rooms"] },
+            "body": { "mode": "raw", "raw": "{{roomBody}}" }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const rows = 5, cols = 8;",
+                  "const labels = ['A', 'B', 'C', 'D', 'E'];",
+                  "const seats = [];",
+                  "for (let r = 0; r < rows; r++) {",
+                  "  for (let c = 0; c < cols; c++) {",
+                  "    seats.push({",
+                  "      rowIndex: r,",
+                  "      columnIndex: c,",
+                  "      rowLabel: labels[r],",
+                  "      columnLabel: String(c + 1),",
+                  "      seatType: r === 4 ? 'COUPLE' : (r === 3 ? 'VIP' : 'NORMAL')",
+                  "    });",
+                  "  }",
+                  "}",
+                  "pm.collectionVariables.set('roomBody', JSON.stringify({",
+                  "  cinemaId: pm.collectionVariables.get('cinemaId'),",
+                  "  roomName: 'Room 1',",
+                  "  totalRows: rows,",
+                  "  totalColumns: cols,",
+                  "  seats: seats",
+                  "}, null, 2));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('tạo phòng 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('roomId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create movie",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/catalog/movies", "host": ["{{baseUrl}}"], "path": ["api", "v1", "catalog", "movies"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Demo Movie {{runId}}\",\n  \"genre\": \"Action\",\n  \"country\": \"USA\",\n  \"language\": \"English\",\n  \"ageRestriction\": \"C13\",\n  \"director\": \"Jane Doe\",\n  \"actors\": \"A, B, C\",\n  \"description\": \"Phim demo cho Postman collection.\",\n  \"duration\": 120,\n  \"releaseDate\": \"{{showDate}}\",\n  \"poseUrl\": \"https://example.com/poster.jpg\",\n  \"trailerUrl\": \"https://example.com/trailer.mp4\",\n  \"status\": \"ACTIVE\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('tạo phim 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('movieId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create showtime (ngày mai 19:00)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/catalog/showtimes", "host": ["{{baseUrl}}"], "path": ["api", "v1", "catalog", "showtimes"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"movieId\": \"{{movieId}}\",\n  \"roomId\": \"{{roomId}}\",\n  \"startTime\": \"{{showtimeStart}}\",\n  \"basePrice\": 90000\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('tạo suất chiếu 201', () => pm.response.to.have.status(201));",
+                  "pm.collectionVariables.set('showtimeId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 · Auth (user)",
+      "item": [
+        {
+          "name": "Register user",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userName\": \"{{userName}}_{{runId}}\",\n  \"email\": \"{{userName}}_{{runId}}@example.com\",\n  \"password\": \"{{userPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('đăng ký user (201) hoặc đã tồn tại (400)', () => {",
+                  "  pm.expect([201, 400]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login user",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/login", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userName\": \"{{userName}}_{{runId}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('userToken', b.accessToken);",
+                  "pm.collectionVariables.set('userRefreshToken', b.refreshToken);",
+                  "pm.collectionVariables.set('userId', b.userId);",
+                  "pm.test('có accessToken', () => pm.expect(b.accessToken).to.be.a('string').and.not.empty);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get my profile (/me)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/auth/me", "host": ["{{baseUrl}}"], "path": ["api", "v1", "auth", "me"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('đúng userName', () => {",
+                  "  pm.expect(pm.response.json().userName).to.eql(pm.variables.get('userName') + '_' + pm.variables.get('runId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 · Browse catalog",
+      "item": [
+        {
+          "name": "List movies (public)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalog/movies?pageNumber=0&pageSize=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "catalog", "movies"],
+              "query": [
+                { "key": "pageNumber", "value": "0" },
+                { "key": "pageSize", "value": "10" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const content = pm.response.json().content || [];",
+                  "if (!pm.collectionVariables.get('movieId') && content.length) {",
+                  "  pm.collectionVariables.set('movieId', content[0].id);",
+                  "  console.log('movieId auto =', content[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Showtimes for movie (by date)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/catalog/showtimes/movie/{{movieId}}?date={{showDate}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "catalog", "showtimes", "movie", "{{movieId}}"],
+              "query": [{ "key": "date", "value": "{{showDate}}" }]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const list = pm.response.json() || [];",
+                  "const scheduled = list.find(s => (s.status || '').toUpperCase() === 'SCHEDULED');",
+                  "if (scheduled) {",
+                  "  pm.collectionVariables.set('showtimeId', scheduled.id);",
+                  "  console.log('showtimeId =', scheduled.id);",
+                  "} else {",
+                  "  console.warn('Không thấy suất chiếu SCHEDULED cho movieId=' + pm.collectionVariables.get('movieId') + ' ngày ' + pm.collectionVariables.get('showDate') + '. Chạy folder 0 hoặc set showtimeId thủ công.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Seat map for showtime",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/booking/showtimes/{{showtimeId}}/seats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "booking", "showtimes", "{{showtimeId}}", "seats"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const matrix = pm.response.json().seatMatrix || [];",
+                  "const flat = matrix.flat();",
+                  "const free = flat.filter(s => (s.status || '').toUpperCase() === 'AVAILABLE' && (s.type || '').toUpperCase() !== 'MAINTENANCE' && (s.type || '').toUpperCase() !== 'COUPLE');",
+                  "pm.test('có ít nhất 2 ghế trống', () => pm.expect(free.length).to.be.at.least(2));",
+                  "if (free.length >= 2) {",
+                  "  pm.collectionVariables.set('seatId1', free[0].id);",
+                  "  pm.collectionVariables.set('seatId2', free[1].id);",
+                  "  console.log('Ghế chọn:', free[0].row + free[0].col, '/', free[1].row + free[1].col);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 · Hold seats & pay",
+      "item": [
+        {
+          "name": "Hold seats",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{baseUrl}}/api/v1/booking/hold", "host": ["{{baseUrl}}"], "path": ["api", "v1", "booking", "hold"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"showtimeId\": \"{{showtimeId}}\",\n  \"seats\": [\n    { \"seatId\": \"{{seatId1}}\" },\n    { \"seatId\": \"{{seatId2}}\" }\n  ]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('giữ chỗ 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.collectionVariables.set('bookingId', b.bookingId);",
+                  "pm.collectionVariables.set('paidPollCount', '0');",
+                  "pm.test('trạng thái PENDING', () => pm.expect(b.status).to.eql('PENDING'));",
+                  "console.log('bookingId =', b.bookingId, '| totalPrice =', b.totalPrice);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get booking detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/booking/{{bookingId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "booking", "{{bookingId}}"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('PENDING và còn thời gian thanh toán', () => {",
+                  "  pm.expect(b.status).to.eql('PENDING');",
+                  "  pm.expect(b.expiresInSeconds).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Simulate payment success (dev)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment/momo/test/{{bookingId}}/success",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment", "momo", "test", "{{bookingId}}", "success"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "// Endpoint dev: bỏ qua MoMo nhưng vẫn chạy đúng pipeline confirm qua RabbitMQ",
+                  "// -> booking sẽ chuyển PAID bất đồng bộ. Request 'Poll booking until PAID' sẽ đợi.'"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "(Optional) Create real MoMo QR",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment/momo/create",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment", "momo", "create"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"bookingId\": \"{{bookingId}}\"\n}" },
+            "description": "Cần MoMo sandbox creds trong `.env` (MOMO_PARTNER_CODE / ACCESS_KEY / SECRET_KEY) và `MOMO_NOTIFY_URL` là URL công khai (ngrok / domain thật). Trả về `payUrl` — mở trên trình duyệt để quét/thanh toán; MoMo gọi ngược IPN về `/api/v1/payment/momo/ipn`. Bỏ qua request này nếu dùng 'Simulate payment success (dev)'."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  console.log('payUrl =', pm.response.json().payUrl);",
+                  "} else {",
+                  "  console.warn('MoMo create thất bại (' + pm.response.code + ') — nhiều khả năng thiếu creds. Dùng endpoint dev thay thế.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Poll booking until PAID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/booking/{{bookingId}}", "host": ["{{baseUrl}}"], "path": ["api", "v1", "booking", "{{bookingId}}"] },
+            "description": "Booking chuyển PAID bất đồng bộ (payment-service -> RabbitMQ -> booking-service). Request này tự lặp lại tối đa 20 lần cho tới khi PAID (chỉ hoạt động trong Collection Runner / Newman; nếu bấm Send lẻ thì gửi lại vài lần)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const b = pm.response.json();",
+                  "let n = parseInt(pm.collectionVariables.get('paidPollCount') || '0', 10);",
+                  "if (b.status === 'PAID') {",
+                  "  pm.collectionVariables.set('paidPollCount', '0');",
+                  "  pm.test('booking đã PAID', () => pm.expect(b.status).to.eql('PAID'));",
+                  "} else if (n < 20) {",
+                  "  pm.collectionVariables.set('paidPollCount', String(n + 1));",
+                  "  console.log('Chờ PAID... lần ' + (n + 1) + ', status hiện tại = ' + b.status);",
+                  "  postman.setNextRequest('Poll booking until PAID');",
+                  "} else {",
+                  "  pm.test('booking đã PAID', () => pm.expect(b.status, 'quá 20 lần vẫn chưa PAID — kiểm tra RabbitMQ / payment-service').to.eql('PAID'));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get tickets (QR)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/booking/{{bookingId}}/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "booking", "{{bookingId}}", "tickets"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "const tickets = pm.response.json() || [];",
+                  "pm.test('mỗi ghế 1 vé (2 vé)', () => pm.expect(tickets.length).to.eql(2));",
+                  "if (tickets.length) {",
+                  "  pm.collectionVariables.set('qrCode', tickets[0].qrCode);",
+                  "  console.log('QR vé 1:', tickets[0].qrCode);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 · Post-booking",
+      "item": [
+        {
+          "name": "My bookings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{baseUrl}}/api/v1/booking/my-bookings", "host": ["{{baseUrl}}"], "path": ["api", "v1", "booking", "my-bookings"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('có booking vừa tạo', () => {",
+                  "  const ids = (pm.response.json() || []).map(x => x.bookingId);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get('bookingId'));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My payment transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/payment/momo/my-transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "payment", "momo", "my-transactions"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Check-in ticket (ADMIN)",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{adminToken}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/booking/tickets/checkin",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "booking", "tickets", "checkin"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"qrCode\": \"{{qrCode}}\"\n}" },
+            "description": "Cần `adminToken` từ folder 0. Soát vé lặp lại sẽ bị chặn (400)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('soát vé 200 (hoặc 400 nếu đã soát/không có adminToken)', () => {",
+                  "  pm.expect([200, 400, 403]).to.include(pm.response.code);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test('vé đã đánh dấu checkedInAt', () => pm.expect(pm.response.json().checkedInAt).to.not.be.null);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel booking + auto refund",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/booking/{{bookingId}}/cancel",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "booking", "{{bookingId}}", "cancel"]
+            },
+            "body": { "mode": "raw", "raw": "{\n  \"reason\": \"Demo — hủy vé sau khi thanh toán\"\n}" },
+            "description": "Vé đã PAID vẫn hủy được khi suất chiếu chưa bắt đầu. booking-service tự gọi payment-service hoàn tiền MoMo. Với giao dịch giả lập (TEST_TRANS_...) MoMo refund sẽ trả FAILED — đó là hành vi đúng, `refundStatus` = FAILED."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('hủy 200', () => pm.response.to.have.status(200));",
+                  "const b = pm.response.json();",
+                  "pm.test('trạng thái CANCELLED', () => pm.expect(b.status).to.eql('CANCELLED'));",
+                  "console.log('refundStatus =', b.refundStatus);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
