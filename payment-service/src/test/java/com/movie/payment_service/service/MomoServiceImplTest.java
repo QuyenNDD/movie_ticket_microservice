@@ -1,6 +1,7 @@
 package com.movie.payment_service.service;
 
 import com.movie.payment_service.dto.BookingConfirmResultEvent;
+import com.movie.payment_service.dto.MoMoIpnDTO;
 import com.movie.payment_service.dto.RefundResponseDTO;
 import com.movie.payment_service.entity.PaymentStatus;
 import com.movie.payment_service.entity.PaymentTransaction;
@@ -10,22 +11,30 @@ import com.movie.payment_service.publisher.BookingConfirmRequestPublisher;
 import com.movie.payment_service.publisher.BookingPaidEmailPublisher;
 import com.movie.payment_service.repository.PaymentTransactionRepository;
 import com.movie.payment_service.repository.RefundTransactionRepository;
+import com.movie.payment_service.util.HmacSHA256Util;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -293,6 +302,197 @@ class MomoServiceImplTest {
             service.confirmBookingAndMarkSuccess(p);
 
             assertThat(p.getLastError()).contains("broker down");
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // processIpn (xác thực chữ ký + máy trạng thái IPN)
+    // ----------------------------------------------------------------
+    @Nested
+    class ProcessIpn {
+
+        private static final String USER_ID = "user-1";
+
+        /** Dựng IPN có chữ ký hợp lệ đúng theo thuật toán trong validateMomoSignature. */
+        private MoMoIpnDTO signedIpn(String orderId, String amount, int resultCode, String transId) {
+            MoMoIpnDTO dto = new MoMoIpnDTO();
+            dto.setPartnerCode("PARTNER");
+            dto.setOrderId(orderId);
+            dto.setRequestId(orderId);
+            dto.setAmount(amount);
+            dto.setOrderInfo("Thanh toan ve phim");
+            dto.setOrderType("momo_wallet");
+            dto.setTransId(transId);
+            dto.setResultCode(resultCode);
+            dto.setMessage("Successful.");
+            dto.setPayType("qr");
+            dto.setResponseTime("2026-09-04 10:00:00");
+            dto.setExtraData(Base64.getEncoder()
+                    .encodeToString(USER_ID.getBytes(StandardCharsets.UTF_8)));
+
+            String raw = "accessKey=access-key"
+                    + "&amount=" + dto.getAmount()
+                    + "&extraData=" + dto.getExtraData()
+                    + "&message=" + dto.getMessage()
+                    + "&orderId=" + dto.getOrderId()
+                    + "&orderInfo=" + dto.getOrderInfo()
+                    + "&orderType=" + dto.getOrderType()
+                    + "&partnerCode=" + dto.getPartnerCode()
+                    + "&payType=" + dto.getPayType()
+                    + "&requestId=" + dto.getRequestId()
+                    + "&responseTime=" + dto.getResponseTime()
+                    + "&resultCode=" + dto.getResultCode()
+                    + "&transId=" + dto.getTransId();
+
+            dto.setSignature(HmacSHA256Util.encode("secret-key", raw));
+            return dto;
+        }
+
+        private void stubBookingDetail(Map<String, Object> body) {
+            when(restTemplate.exchange(contains("/api/v1/booking/"), eq(HttpMethod.GET),
+                    any(HttpEntity.class), eq(Map.class)))
+                    .thenReturn(new ResponseEntity<>(body, HttpStatus.OK));
+        }
+
+        @Test
+        void invalidSignature_throwsAndTouchesNothing() {
+            MoMoIpnDTO dto = signedIpn("booking-1_123", "200000", 0, "9001");
+            dto.setSignature("bogus-signature");
+
+            assertThatThrownBy(() -> service.processIpn(dto))
+                    .hasMessageContaining("Chữ ký IPN không hợp lệ");
+
+            verify(paymentTransactionRepository, never()).save(any());
+        }
+
+        @Test
+        void paymentTransactionNotFound_throws() {
+            MoMoIpnDTO dto = signedIpn("booking-1_123", "200000", 0, "9001");
+            when(paymentTransactionRepository.findByOrderIdForUpdate("booking-1_123"))
+                    .thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.processIpn(dto))
+                    .hasMessageContaining("Không tìm thấy payment transaction");
+        }
+
+        @Test
+        void paymentAlreadySuccess_isIdempotentNoOp() {
+            MoMoIpnDTO dto = signedIpn("booking-1_123", "200000", 0, "9001");
+            when(paymentTransactionRepository.findByOrderIdForUpdate("booking-1_123"))
+                    .thenReturn(Optional.of(payment(PaymentStatus.SUCCESS, "9001")));
+
+            service.processIpn(dto);
+
+            verify(paymentTransactionRepository, never()).save(any());
+        }
+
+        @Test
+        void transIdAlreadyProcessed_isIdempotentNoOp() {
+            MoMoIpnDTO dto = signedIpn("booking-1_123", "200000", 0, "9001");
+            when(paymentTransactionRepository.findByOrderIdForUpdate("booking-1_123"))
+                    .thenReturn(Optional.of(payment(PaymentStatus.INIT, null)));
+            when(paymentTransactionRepository.existsByTransIdAndStatus("9001", PaymentStatus.SUCCESS))
+                    .thenReturn(true);
+
+            service.processIpn(dto);
+
+            verify(paymentTransactionRepository, never()).save(any());
+        }
+
+        @Test
+        void momoResultCodeFailure_marksPaymentFailed() {
+            MoMoIpnDTO dto = signedIpn("booking-1_123", "200000", 1006, "9001");
+            PaymentTransaction p = payment(PaymentStatus.INIT, null);
+            when(paymentTransactionRepository.findByOrderIdForUpdate("booking-1_123"))
+                    .thenReturn(Optional.of(p));
+
+            service.processIpn(dto);
+
+            assertThat(p.getStatus()).isEqualTo(PaymentStatus.FAILED);
+            assertThat(p.getNextRetryAt()).isNull();
+            verify(paymentTransactionRepository).save(p);
+        }
+
+        @Test
+        void momoResultCode1005_marksPaymentExpired() {
+            MoMoIpnDTO dto = signedIpn("booking-1_123", "200000", 1005, "9001");
+            PaymentTransaction p = payment(PaymentStatus.INIT, null);
+            when(paymentTransactionRepository.findByOrderIdForUpdate("booking-1_123"))
+                    .thenReturn(Optional.of(p));
+
+            service.processIpn(dto);
+
+            assertThat(p.getStatus()).isEqualTo(PaymentStatus.EXPIRED);
+        }
+
+        @Test
+        void orderIdBookingMismatch_marksPaymentReview() {
+            MoMoIpnDTO dto = signedIpn("other-booking_123", "200000", 0, "9001");
+            PaymentTransaction p = payment(PaymentStatus.INIT, null);
+            when(paymentTransactionRepository.findByOrderIdForUpdate("other-booking_123"))
+                    .thenReturn(Optional.of(p));
+
+            service.processIpn(dto);
+
+            assertThat(p.getStatus()).isEqualTo(PaymentStatus.PAYMENT_REVIEW);
+            assertThat(p.getLastError()).contains("orderId không khớp");
+        }
+
+        @Test
+        void amountMismatch_marksPaymentReview() {
+            MoMoIpnDTO dto = signedIpn("booking-1_123", "999999", 0, "9001");
+            PaymentTransaction p = payment(PaymentStatus.INIT, null);
+            when(paymentTransactionRepository.findByOrderIdForUpdate("booking-1_123"))
+                    .thenReturn(Optional.of(p));
+
+            service.processIpn(dto);
+
+            assertThat(p.getStatus()).isEqualTo(PaymentStatus.PAYMENT_REVIEW);
+            assertThat(p.getLastError()).contains("Số tiền MoMo không khớp");
+        }
+
+        @Test
+        void bookingAlreadyPaid_marksPaymentSuccess() {
+            MoMoIpnDTO dto = signedIpn("booking-1_123", "200000", 0, "9001");
+            PaymentTransaction p = payment(PaymentStatus.CONFIRM_PENDING, null);
+            p.setEmailSent(true); // bỏ qua nhánh gửi email để test tập trung
+            when(paymentTransactionRepository.findByOrderIdForUpdate("booking-1_123"))
+                    .thenReturn(Optional.of(p));
+            stubBookingDetail(Map.of("status", "PAID", "totalPrice", 200000));
+
+            service.processIpn(dto);
+
+            assertThat(p.getStatus()).isEqualTo(PaymentStatus.SUCCESS);
+            assertThat(p.getTransId()).isEqualTo("9001");
+        }
+
+        @Test
+        void bookingCancelledAfterMomoPaid_marksRefundRequired() {
+            MoMoIpnDTO dto = signedIpn("booking-1_123", "200000", 0, "9001");
+            PaymentTransaction p = payment(PaymentStatus.INIT, null);
+            when(paymentTransactionRepository.findByOrderIdForUpdate("booking-1_123"))
+                    .thenReturn(Optional.of(p));
+            stubBookingDetail(Map.of("status", "CANCELLED", "totalPrice", 200000));
+
+            service.processIpn(dto);
+
+            assertThat(p.getStatus()).isEqualTo(PaymentStatus.REFUND_REQUIRED);
+        }
+
+        @Test
+        void bookingStillPending_movesToConfirmPendingAndPublishesConfirm() {
+            MoMoIpnDTO dto = signedIpn("booking-1_123", "200000", 0, "9001");
+            PaymentTransaction p = payment(PaymentStatus.INIT, null);
+            p.setRetryCount(0);
+            when(paymentTransactionRepository.findByOrderIdForUpdate("booking-1_123"))
+                    .thenReturn(Optional.of(p));
+            stubBookingDetail(Map.of("status", "PENDING", "totalPrice", 200000, "expiresInSeconds", 300));
+
+            service.processIpn(dto);
+
+            assertThat(p.getStatus()).isEqualTo(PaymentStatus.CONFIRM_PENDING);
+            assertThat(p.getTransId()).isEqualTo("9001");
+            verify(bookingConfirmRequestPublisher).publish(any());
         }
     }
 }

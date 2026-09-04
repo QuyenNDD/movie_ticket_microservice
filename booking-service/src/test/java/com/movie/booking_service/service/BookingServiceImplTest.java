@@ -1,7 +1,9 @@
 package com.movie.booking_service.service;
 
+import com.movie.booking_service.dto.BookingRequestDTO;
 import com.movie.booking_service.dto.BookingResponseDTO;
 import com.movie.booking_service.dto.BookingSummaryDTO;
+import com.movie.booking_service.dto.SeatStatusResponseDTO;
 import com.movie.booking_service.dto.ShowtimeResponseDTO;
 import com.movie.booking_service.dto.TicketResponseDTO;
 import com.movie.booking_service.entity.Booking;
@@ -18,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.modelmapper.ModelMapper;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -27,14 +30,19 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
@@ -65,6 +73,8 @@ class BookingServiceImplTest {
     private TicketRepository ticketRepository;
     @Mock
     private BookingSeatRepository bookingSeatRepository;
+    @Mock
+    private ValueOperations<String, String> valueOperations;
 
     private BookingServiceImpl service;
 
@@ -408,6 +418,207 @@ class BookingServiceImplTest {
             assertThatThrownBy(() -> service.checkInTicket("staff-1", "qr-1"))
                     .hasMessageContaining("đã bị hủy");
             verify(ticketRepository, never()).save(any());
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // holdSeats + validateSeatSelectionRules (chọn ghế, rule COUPLE, ghế cô lập, lock Redis)
+    // ----------------------------------------------------------------
+    @Nested
+    class HoldSeats {
+
+        private BookingRequestDTO req(String... seatIds) {
+            BookingRequestDTO r = new BookingRequestDTO();
+            r.setShowtimeId(SHOWTIME_ID);
+            r.setSeats(Arrays.stream(seatIds).map(id -> {
+                BookingRequestDTO.SeatRequest sr = new BookingRequestDTO.SeatRequest();
+                sr.setSeatId(id);
+                return sr;
+            }).toList());
+            return r;
+        }
+
+        private SeatStatusResponseDTO seat(String id, int col, String type) {
+            SeatStatusResponseDTO s = new SeatStatusResponseDTO();
+            s.setId(id);
+            s.setRowName("A");
+            s.setSeatLabel(String.valueOf(col));
+            s.setGridRow(1);
+            s.setGridColumn(col);
+            s.setSeatType(type);
+            return s;
+        }
+
+        private void stubShowtimeWithRoom() {
+            ShowtimeResponseDTO st = new ShowtimeResponseDTO();
+            st.setStatus("SCHEDULED");
+            st.setStartTime(LocalDateTime.now().plusHours(3));
+            st.setRoomId("room-1");
+            lenient().when(restTemplate.exchange(contains("/showtimes/" + SHOWTIME_ID), eq(HttpMethod.GET),
+                    any(HttpEntity.class), eq(ShowtimeResponseDTO.class)))
+                    .thenReturn(new ResponseEntity<>(st, HttpStatus.OK));
+        }
+
+        private void stubRoomSeats(SeatStatusResponseDTO... seats) {
+            lenient().when(restTemplate.exchange(contains("/rooms/internal/"), eq(HttpMethod.GET),
+                    any(HttpEntity.class), eq(SeatStatusResponseDTO[].class)))
+                    .thenReturn(new ResponseEntity<>(seats, HttpStatus.OK));
+        }
+
+        private void stubSeatPrice(double price) {
+            lenient().when(restTemplate.exchange(contains("/seats/"), eq(HttpMethod.GET),
+                    any(HttpEntity.class), eq(Double.class)))
+                    .thenReturn(new ResponseEntity<>(price, HttpStatus.OK));
+        }
+
+        private void stubNoLocksHeld() {
+            lenient().when(bookingRepository.findPaidSeatIdsByShowtime(SHOWTIME_ID))
+                    .thenReturn(List.of());
+            lenient().when(redisTemplate.keys(anyString())).thenReturn(Collections.emptySet());
+        }
+
+        @Test
+        void missingShowtimeId_throws() {
+            BookingRequestDTO r = req("seat-1");
+            r.setShowtimeId("  ");
+
+            assertThatThrownBy(() -> service.holdSeats(USER_ID, r))
+                    .hasMessageContaining("Thiếu thông tin suất chiếu");
+        }
+
+        @Test
+        void emptySeats_throws() {
+            BookingRequestDTO r = new BookingRequestDTO();
+            r.setShowtimeId(SHOWTIME_ID);
+            r.setSeats(List.of());
+
+            assertThatThrownBy(() -> service.holdSeats(USER_ID, r))
+                    .hasMessageContaining("ít nhất 1 ghế");
+        }
+
+        @Test
+        void duplicateSeatInRequest_throws() {
+            stubShowtimeWithRoom();
+
+            assertThatThrownBy(() -> service.holdSeats(USER_ID, req("seat-1", "seat-1")))
+                    .hasMessageContaining("ghế bị trùng");
+        }
+
+        @Test
+        void seatAlreadyPaidInDb_throws() {
+            stubShowtimeWithRoom();
+            when(bookingRepository.checkIfSeatsArePaid(eq(SHOWTIME_ID), anyList())).thenReturn(true);
+
+            assertThatThrownBy(() -> service.holdSeats(USER_ID, req("seat-1")))
+                    .hasMessageContaining("đã được thanh toán");
+        }
+
+        @Test
+        void selectedSeatNotInRoom_throws() {
+            stubShowtimeWithRoom();
+            when(bookingRepository.checkIfSeatsArePaid(eq(SHOWTIME_ID), anyList())).thenReturn(false);
+            stubNoLocksHeld();
+            stubRoomSeats(seat("seat-1", 1, "SINGLE"), seat("seat-2", 2, "SINGLE"));
+
+            assertThatThrownBy(() -> service.holdSeats(USER_ID, req("seat-99")))
+                    .hasMessageContaining("không thuộc phòng chiếu");
+        }
+
+        @Test
+        void selectedSeatLockedByOthers_throws() {
+            stubShowtimeWithRoom();
+            when(bookingRepository.checkIfSeatsArePaid(eq(SHOWTIME_ID), anyList())).thenReturn(false);
+            lenient().when(bookingRepository.findPaidSeatIdsByShowtime(SHOWTIME_ID)).thenReturn(List.of());
+            when(redisTemplate.keys(anyString()))
+                    .thenReturn(Set.of("lock:showtime:" + SHOWTIME_ID + ":seat:seat-1"));
+            stubRoomSeats(seat("seat-1", 1, "SINGLE"), seat("seat-2", 2, "SINGLE"));
+
+            assertThatThrownBy(() -> service.holdSeats(USER_ID, req("seat-1")))
+                    .hasMessageContaining("đang được người khác giữ");
+        }
+
+        @Test
+        void maintenanceSeat_throws() {
+            stubShowtimeWithRoom();
+            when(bookingRepository.checkIfSeatsArePaid(eq(SHOWTIME_ID), anyList())).thenReturn(false);
+            stubNoLocksHeld();
+            stubRoomSeats(seat("seat-1", 1, "MAINTENANCE"), seat("seat-2", 2, "SINGLE"));
+
+            assertThatThrownBy(() -> service.holdSeats(USER_ID, req("seat-1")))
+                    .hasMessageContaining("bảo trì");
+        }
+
+        @Test
+        void coupleSeatsExceedLogicalLimit_throws() {
+            stubShowtimeWithRoom();
+            when(bookingRepository.checkIfSeatsArePaid(eq(SHOWTIME_ID), anyList())).thenReturn(false);
+            stubNoLocksHeld();
+            stubRoomSeats(
+                    seat("c1", 1, "COUPLE"), seat("c2", 2, "COUPLE"), seat("c3", 3, "COUPLE"),
+                    seat("c4", 4, "COUPLE"), seat("c5", 5, "COUPLE"));
+
+            // 5 ghế COUPLE = 10 chỗ ngồi > 8
+            assertThatThrownBy(() -> service.holdSeats(USER_ID, req("c1", "c2", "c3", "c4", "c5")))
+                    .hasMessageContaining("tối đa");
+        }
+
+        @Test
+        void selectionLeavesIsolatedOrphanSeat_throws() {
+            stubShowtimeWithRoom();
+            when(bookingRepository.checkIfSeatsArePaid(eq(SHOWTIME_ID), anyList())).thenReturn(false);
+            stubNoLocksHeld();
+            stubRoomSeats(
+                    seat("s1", 1, "SINGLE"), seat("s2", 2, "SINGLE"),
+                    seat("s3", 3, "SINGLE"), seat("s4", 4, "SINGLE"));
+
+            // Chọn s1 + s3 để lại s2 trống lẻ kẹp giữa 2 ghế đang chọn
+            assertThatThrownBy(() -> service.holdSeats(USER_ID, req("s1", "s3")))
+                    .hasMessageContaining("ghế trống lẻ cô lập");
+        }
+
+        @Test
+        void redisLockLost_throwsAndReleasesAcquiredLocks() {
+            stubShowtimeWithRoom();
+            when(bookingRepository.checkIfSeatsArePaid(eq(SHOWTIME_ID), anyList())).thenReturn(false);
+            stubNoLocksHeld();
+            stubRoomSeats(
+                    seat("s1", 1, "SINGLE"), seat("s2", 2, "SINGLE"), seat("s3", 3, "SINGLE"));
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            String k1 = "lock:showtime:" + SHOWTIME_ID + ":seat:s1";
+            String k2 = "lock:showtime:" + SHOWTIME_ID + ":seat:s2";
+            when(valueOperations.setIfAbsent(eq(k1), any(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+            when(valueOperations.setIfAbsent(eq(k2), any(), anyLong(), any(TimeUnit.class))).thenReturn(false);
+
+            assertThatThrownBy(() -> service.holdSeats(USER_ID, req("s1", "s2")))
+                    .hasMessageContaining("vừa có người chọn mất rồi");
+
+            verify(redisTemplate).delete(k1);
+        }
+
+        @Test
+        void happyPath_savesPendingBookingAndAcquiresLocks() {
+            stubShowtimeWithRoom();
+            when(bookingRepository.checkIfSeatsArePaid(eq(SHOWTIME_ID), anyList())).thenReturn(false);
+            stubNoLocksHeld();
+            stubRoomSeats(
+                    seat("s1", 1, "SINGLE"), seat("s2", 2, "SINGLE"), seat("s3", 3, "SINGLE"));
+            stubSeatPrice(50_000.0);
+            when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+            when(valueOperations.setIfAbsent(anyString(), any(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+            when(modelMapper.map(any(), eq(Booking.class))).thenReturn(new Booking());
+            when(bookingRepository.save(any(Booking.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            BookingResponseDTO result = service.holdSeats(USER_ID, req("s1", "s2"));
+
+            assertThat(result.getStatus()).isEqualTo("PENDING");
+            assertThat(result.getTotalPrice()).isEqualTo(100_000.0);
+
+            org.mockito.ArgumentCaptor<Booking> captor = org.mockito.ArgumentCaptor.forClass(Booking.class);
+            verify(bookingRepository).save(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo("PENDING");
+            assertThat(captor.getValue().getUserId()).isEqualTo(USER_ID);
+            verify(valueOperations, org.mockito.Mockito.times(2))
+                    .setIfAbsent(anyString(), any(), anyLong(), any(TimeUnit.class));
         }
     }
 }
