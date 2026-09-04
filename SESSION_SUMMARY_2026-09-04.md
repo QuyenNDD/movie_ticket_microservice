@@ -145,9 +145,38 @@ Nợ kỹ thuật còn lại (mức thấp, không chặn deploy):
 - **Mới**: `.github/workflows/ci.yml`.
 - **Sửa**: `README.md` (badge), 6 × `*/mvnw` (chmod +x), `DEPLOYMENT_ROADMAP.md` (tick "CI — GitHub Actions" Giai đoạn A + nhật ký), `FEATURE_CHECKLIST.md` (ghi chú "CI đã có / CD chưa" dưới mục CI/CD pipeline), `SESSION_SUMMARY_2026-09-04.md` (file này).
 
-## 12. Việc TIẾP THEO (không đổi, trừ CI đã xong)
+---
+
+# Bổ sung — phiên 3 cùng ngày (2026-09-04): Postman collection
+
+## 13. `postman/` — collection luồng đặt vé đầu-cuối
+
+- **`movie-ticket.postman_collection.json`** (schema v2.1.0), **`movie-ticket-local.postman_environment.json`**, **`postman/README.md`**.
+- 5 folder chạy tuần tự qua `api-gateway:8080`, test script tự lưu + chuyền biến (`adminToken`/`userToken`/`showtimeId`/`bookingId`/`seatId1,2`/`qrCode`):
+  - `0 · Admin — seed data`: register admin → (bước thủ công: `UPDATE users SET role='ADMIN'`) → login admin → tạo cinema / room (5×8, hàng D=VIP, E=COUPLE) / movie / showtime (ngày mai 19:00).
+  - `1 · Auth (user)`: register → login → `/me`.
+  - `2 · Browse catalog`: list movies → showtimes theo `movieId`+date → seat map (test script tự nhặt 2 ghế `AVAILABLE` non-COUPLE → `seatId1/2`).
+  - `3 · Hold seats & pay`: hold → booking detail → **Simulate payment success (dev)** (`/payment/momo/test/{id}/success`) hoặc **Create real MoMo QR** → **Poll booking until PAID** (tự lặp ≤20 lần, chờ pipeline RabbitMQ) → get tickets (QR).
+  - `4 · Post-booking`: my-bookings, my-transactions, check-in (ADMIN), cancel + auto refund.
+- Collection-level pre-request sinh `runId` ngẫu nhiên (tên đăng ký không trùng khi chạy lại) + tính `showDate`/`showtimeStart` = ngày mai. Auth mặc định `Bearer {{userToken}}`, override no-auth / `{{adminToken}}` theo request.
+
+## 14. Verify bằng Newman trên stack thật
+
+- `docker compose up -d` (9/9 healthy, image build sẵn từ phiên 2026-09-03).
+- 2 bug trong collection phát hiện khi verify → sửa:
+  - `Create movie`: `releaseDate` phải ≥ hôm nay (rule `isBefore(now)` chặn, message "Release day is not before now" bị ngược nghĩa — nợ cũ) → dùng `{{showDate}}`; `status` phải là `ACTIVE`.
+  - `Create room`: `seatType` hợp lệ là `NORMAL`/`VIP`/`COUPLE`/`MAINTENANCE`/`EMPTY` — đã dùng nhầm `SINGLE`.
+- Sau khi sửa: `npx newman run ... --env-var runId=990013 --delay-request 500` → **22 request, 31/31 assertion PASS**. Bằng chứng: booking `40a4...` chuyển `PAID` qua RabbitMQ, sinh 2 vé QR, check-in set `checkedInAt`, cancel → `CANCELLED` + `refundStatus=FAILED` (đúng: transId `TEST_...` không refund MoMo thật được).
+- Sau verify: `docker compose down`.
+
+## 15. File tạo/sửa phiên 3
+
+- **Mới**: `postman/movie-ticket.postman_collection.json`, `postman/movie-ticket-local.postman_environment.json`, `postman/README.md`.
+- **Sửa**: `DEPLOYMENT_ROADMAP.md` (tick "Postman collection" + trạng thái), `SESSION_SUMMARY_2026-09-04.md` (file này). (`FEATURE_CHECKLIST.md` không có mục riêng cho Postman — roadmap Giai đoạn A đã theo dõi.)
+
+## 16. Việc TIẾP THEO
 
 1. ~~CI GitHub Actions~~ ✅
-2. **Postman collection** — full luồng đặt vé, export `.json` vào repo.
-3. **Dọn secret default hardcode** trong `application.yaml`/`.yml`.
-4. Sang **Giai đoạn B**: chốt host + deploy.
+2. ~~Postman collection~~ ✅
+3. **Dọn secret default hardcode** trong `application.yaml`/`.yml` (`JWT_SECRET`/`GATEWAY_SECRET`/`INTERNAL_SECRET`).
+4. Sang **Giai đoạn B**: chốt host (Oracle Cloud / PC + Cloudflare Tunnel) + deploy.
