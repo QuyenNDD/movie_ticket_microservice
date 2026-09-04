@@ -23,7 +23,7 @@ public class AuthController {
     @Autowired
     UserService userService;
 
-    @Value("${app.internal-secret:dev-internal-secret}")
+    @Value("${app.internal-secret}")
     private String internalSecret;
 
     // 1. ĐĂNG KÝ (Giữ nguyên của bạn, thêm @Valid)

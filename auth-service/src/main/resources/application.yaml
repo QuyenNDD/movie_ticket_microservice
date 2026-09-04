@@ -27,7 +27,7 @@ spring:
         dialect: org.hibernate.dialect.MySQLDialect
 
 app:
-  internal-secret: ${INTERNAL_SECRET:dev-internal-secret}
+  internal-secret: ${INTERNAL_SECRET}
   notification-service-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8085}
   password-reset-expiration-ms: ${PASSWORD_RESET_EXPIRATION_MS:900000}
   password-reset-url: ${PASSWORD_RESET_URL:http://localhost:5173/reset-password}

@@ -70,7 +70,7 @@ public class UserServiceImpl implements UserService{
     @Autowired
     RestTemplate restTemplate;
 
-    @Value("${app.internal-secret:dev-internal-secret}")
+    @Value("${app.internal-secret}")
     private String internalSecret;
 
     @Value("${app.notification-service-url:http://localhost:8085}")
