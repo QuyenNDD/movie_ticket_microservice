@@ -210,6 +210,9 @@
   - → 2 test `@SpringBootTest contextLoads` mặc định (booking + payment) đánh `@Disabled` vì cần MySQL/Redis/RabbitMQ thật.
 - [ ] Integration test luồng đặt vé end-to-end
 - [ ] CI/CD pipeline tự động (build, test, deploy)
+  - → **CI đã có**: `.github/workflows/ci.yml` — matrix 6 service, `./mvnw -B -ntp verify` trên JDK 21 khi
+    push/PR vào `main`, cache `~/.m2`, upload surefire-reports, badge trong README. Run đầu xanh 6/6 job.
+  - → **CD chưa làm** (đợi chốt host ở Giai đoạn B): SSH vào host + `git pull` + `docker compose up -d --build` khi merge `main`.
 - [x] Container hóa đầy đủ 6 service trong `docker-compose.yml`
   - → Mỗi service có `Dockerfile` multi-stage (`maven:3.9-eclipse-temurin-21` build →
     `eclipse-temurin:21-jre-alpine` runtime, chạy non-root, `-XX:MaxRAMPercentage=75`) + `.dockerignore`.

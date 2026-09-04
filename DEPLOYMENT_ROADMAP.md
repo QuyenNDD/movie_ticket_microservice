@@ -63,7 +63,7 @@ Dự án này là **portfolio để đi xin việc**, cần **triển khai trên
 - [x] `docker/mysql/init.sql` tạo sẵn 5 database
 - [x] Sửa xung đột env var: gateway dùng `*_SERVICE_URI` (base) tách khỏi `*_SERVICE_URL` (có path)
 - [x] `README.md` — sơ đồ kiến trúc (mermaid), tech stack, điểm kỹ thuật nổi bật, hướng dẫn chạy, roadmap
-- [ ] **CI — GitHub Actions**: build + `mvn test` cả 6 service khi push/PR, badge trong README
+- [x] **CI — GitHub Actions**: build + `mvn test` cả 6 service khi push/PR, badge trong README — `.github/workflows/ci.yml` (matrix 6 service, `./mvnw verify` JDK 21); run đầu tiên xanh 6/6 job
 - [ ] **Postman collection** — full luồng: đăng ký → login → xem phim → giữ ghế → thanh toán (MoMo sandbox) → vé QR. Export vào repo.
 - [ ] **Dọn secret default hardcode** trong `application.yaml`/`.yml` đã commit (`JWT_SECRET`, `GATEWAY_SECRET`, `INTERNAL_SECRET` đang có giá trị mặc định lộ trong git) → đổi thành placeholder vô hại hoặc bỏ default để fail-fast
 
@@ -101,9 +101,9 @@ KHÔNG làm: hạng thành viên, referral, đặt vé nhóm, xuất Excel, giá
 
 **Cập nhật:** 2026-09-04 (cuối phiên).
 
-- Đang ở: **cuối Giai đoạn A**. Đã container hóa xong, cả stack chạy bằng `docker compose up -d --build` (9/9 container healthy, E2E qua gateway OK).
+- Đang ở: **cuối Giai đoạn A**. Đã container hóa xong, cả stack chạy bằng `docker compose up -d --build` (9/9 container healthy, E2E qua gateway OK). **CI GitHub Actions đã xanh.**
 - **Nợ kỹ thuật "còn treo" từ các phiên trước đã dọn sạch** (phiên 2026-09-04): gộp 2 filter catalog chồng nhau, externalize CORS origin gateway, unit test `holdSeats` + `processIpn` (booking 32 test / payment 25 test).
-- **Việc TIẾP THEO ngay:** GitHub Actions CI (build + `mvn test` 6 service) → rồi Postman collection → rồi dọn secret default → chuyển sang Giai đoạn B (chốt host + deploy).
+- **Việc TIẾP THEO ngay:** Postman collection → rồi dọn secret default → chuyển sang Giai đoạn B (chốt host + deploy).
 - Chưa chốt host. Cần bạn quyết: có thẻ để xác minh Oracle Cloud không? Nếu có → Oracle. Nếu không → PC + Cloudflare Tunnel.
 
 ---
@@ -120,7 +120,9 @@ Chi tiết đầy đủ ở `SESSION_SUMMARY_2026-09-04.md`. Tóm tắt: **dọn
 - **Unit test bổ sung**: `holdSeats` + `validateSeatSelectionRules` (11 test: rule COUPLE, ghế cô lập, lock Redis, ghế bảo trì/không thuộc phòng...) → `BookingServiceImplTest` 32 test. `processIpn` MoMo (11 test: chữ ký, idempotent IPN lặp, PAYMENT_REVIEW/REFUND_REQUIRED, các nhánh máy trạng thái) → `MomoServiceImplTest` 25 test.
 - `mvn test` cả 4 service liên quan BUILD SUCCESS. **Chưa commit** (chờ user xác nhận).
 
-**Còn dang dở (không đổi so với phiên trước):** CI GitHub Actions · Postman collection · dọn secret default hardcode · chốt host + deploy (Giai đoạn B).
+**Phiên 2 cùng ngày — CI GitHub Actions:** `.github/workflows/ci.yml` (matrix 6 service, `./mvnw verify` JDK 21, cache `~/.m2`, upload surefire-reports) + đặt bit thực thi 6 file `mvnw` + badge README. Push → **run đầu tiên xanh 6/6 job**.
+
+**Còn dang dở:** Postman collection · dọn secret default hardcode · chốt host + deploy (Giai đoạn B).
 
 ### Phiên 2026-09-03
 

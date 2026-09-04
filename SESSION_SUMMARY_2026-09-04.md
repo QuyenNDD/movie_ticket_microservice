@@ -118,3 +118,36 @@ Tất cả các nợ kỹ thuật "còn treo" liệt kê ở cuối `SESSION_SUM
 Nợ kỹ thuật còn lại (mức thấp, không chặn deploy):
 - Integration test luồng đặt vé end-to-end (Testcontainers) — Giai đoạn 4 checklist.
 - Chuẩn hoá `.env.example` khớp hoàn toàn biến compose (Giai đoạn C).
+
+---
+
+# Bổ sung — phiên 2 cùng ngày (2026-09-04): CI GitHub Actions
+
+## 8. `.github/workflows/ci.yml` — build + test cả 6 service
+
+- Trigger: push / PR vào `main`. `permissions: contents: read`, `concurrency` hủy run cũ khi push liên tiếp.
+- **Matrix 6 service** (`fail-fast: false`): mỗi job `actions/checkout@v4` → `actions/setup-java@v4` (temurin 21, `cache: maven`) → `./mvnw -B -ntp -e verify` trong thư mục service → upload `target/surefire-reports/` làm artifact (`if: always()`).
+- Chọn **JDK 21** (pom target `java.version=17` nhưng test đã verify xanh trên 21 ở local, Spring Boot 3.5.14 chạy tốt cả 2).
+- Dùng `verify` (không chỉ `test`) để CI cũng chạy `package` + `spring-boot:repackage` — xác nhận jar build được (thứ Docker sẽ build).
+
+## 9. Đặt bit thực thi cho `mvnw`
+
+6 file `*/mvnw` trước ở mode `100644` (không executable) → `git update-index --chmod=+x` thành `100755` để runner Linux gọi `./mvnw` trực tiếp (không cần `chmod` trong workflow).
+
+## 10. Badge + verify
+
+- Thêm badge `[![CI](...actions/workflows/ci.yml/badge.svg)]` vào `README.md` (thay comment placeholder cũ).
+- Local: `./mvnw verify` notification-service OK (test + repackage jar).
+- **Push lên `main` → run CI đầu tiên: SUCCESS, 6/6 job xanh** (run `33832839853`).
+
+## 11. File tạo/sửa phiên 2
+
+- **Mới**: `.github/workflows/ci.yml`.
+- **Sửa**: `README.md` (badge), 6 × `*/mvnw` (chmod +x), `DEPLOYMENT_ROADMAP.md` (tick "CI — GitHub Actions" Giai đoạn A + nhật ký), `FEATURE_CHECKLIST.md` (ghi chú "CI đã có / CD chưa" dưới mục CI/CD pipeline), `SESSION_SUMMARY_2026-09-04.md` (file này).
+
+## 12. Việc TIẾP THEO (không đổi, trừ CI đã xong)
+
+1. ~~CI GitHub Actions~~ ✅
+2. **Postman collection** — full luồng đặt vé, export `.json` vào repo.
+3. **Dọn secret default hardcode** trong `application.yaml`/`.yml`.
+4. Sang **Giai đoạn B**: chốt host + deploy.
