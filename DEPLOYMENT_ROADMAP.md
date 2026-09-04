@@ -65,7 +65,7 @@ Dự án này là **portfolio để đi xin việc**, cần **triển khai trên
 - [x] `README.md` — sơ đồ kiến trúc (mermaid), tech stack, điểm kỹ thuật nổi bật, hướng dẫn chạy, roadmap
 - [x] **CI — GitHub Actions**: build + `mvn test` cả 6 service khi push/PR, badge trong README — `.github/workflows/ci.yml` (matrix 6 service, `./mvnw verify` JDK 21); run đầu tiên xanh 6/6 job
 - [x] **Postman collection** — full luồng: đăng ký → login → xem phim → giữ ghế → thanh toán (MoMo sandbox) → vé QR. Export vào repo. — `postman/` (collection v2.1.0 + environment + README); verify bằng Newman trên stack thật: 31/31 assertion PASS
-- [ ] **Dọn secret default hardcode** trong `application.yaml`/`.yml` đã commit (`JWT_SECRET`, `GATEWAY_SECRET`, `INTERNAL_SECRET` đang có giá trị mặc định lộ trong git) → đổi thành placeholder vô hại hoặc bỏ default để fail-fast
+- [x] **Dọn secret default hardcode** trong `application.yaml`/`.yml` đã commit (`JWT_SECRET`, `GATEWAY_SECRET`, `INTERNAL_SECRET` từng có giá trị hex/base64 thật làm default) → **bỏ default hẳn** (`${VAR}` không fallback) ở cả 6 service + 2 chỗ `@Value` trong auth-service → thiếu env là fail khi khởi động. `.env.example` ghi rõ 3 biến này bắt buộc
 
 ### Giai đoạn B — Deploy
 
@@ -103,7 +103,7 @@ KHÔNG làm: hạng thành viên, referral, đặt vé nhóm, xuất Excel, giá
 
 - Đang ở: **cuối Giai đoạn A**. Đã container hóa xong, cả stack chạy bằng `docker compose up -d --build` (9/9 container healthy, E2E qua gateway OK). **CI GitHub Actions đã xanh.**
 - **Nợ kỹ thuật "còn treo" từ các phiên trước đã dọn sạch** (phiên 2026-09-04): gộp 2 filter catalog chồng nhau, externalize CORS origin gateway, unit test `holdSeats` + `processIpn` (booking 32 test / payment 25 test).
-- **Việc TIẾP THEO ngay:** Dọn secret default hardcode → chuyển sang Giai đoạn B (chốt host + deploy). (CI + Postman collection đã xong.)
+- **Giai đoạn A xong.** Việc TIẾP THEO: **Giai đoạn B — Deploy** (chốt host: Oracle Cloud cần thẻ / PC + Cloudflare Tunnel; rồi tạo instance, cài Docker, `.env` production, `git clone` + `docker compose up`, reverse proxy + HTTPS).
 - Chưa chốt host. Cần bạn quyết: có thẻ để xác minh Oracle Cloud không? Nếu có → Oracle. Nếu không → PC + Cloudflare Tunnel.
 
 ---

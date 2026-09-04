@@ -178,5 +178,43 @@ Nợ kỹ thuật còn lại (mức thấp, không chặn deploy):
 
 1. ~~CI GitHub Actions~~ ✅
 2. ~~Postman collection~~ ✅
-3. **Dọn secret default hardcode** trong `application.yaml`/`.yml` (`JWT_SECRET`/`GATEWAY_SECRET`/`INTERNAL_SECRET`).
+3. ~~Dọn secret default hardcode~~ ✅ (phiên 4 bên dưới)
 4. Sang **Giai đoạn B**: chốt host (Oracle Cloud / PC + Cloudflare Tunnel) + deploy.
+
+---
+
+# Bổ sung — phiên 4 cùng ngày (2026-09-04): dọn secret default hardcode
+
+## 17. Bỏ giá trị mặc định của secret trong yaml + `@Value`
+
+Các file `application.yaml`/`.yml` đã commit từng chứa **giá trị hex/base64 thật** làm default cho secret dùng chung — bất kỳ ai đọc git đều thấy. Xử lý theo hướng **fail-fast**: bỏ default hẳn, thiếu env → app fail khi khởi động (giống DB creds vốn đã không có default).
+
+- **`JWT_SECRET`**: `api-gateway/application.yaml` `${JWT_SECRET:VmVy...}` → `${JWT_SECRET}`. (auth-service đã không có default từ trước.)
+- **`GATEWAY_SECRET`**: bỏ default `a3f8c9e1...` ở **5 file** — api-gateway, booking, payment, notification, catalog.
+- **`INTERNAL_SECRET`**: bỏ default `8b7c6d5e...` ở **4 file** — booking, payment, notification, catalog; auth-service đổi `${INTERNAL_SECRET:dev-internal-secret}` → `${INTERNAL_SECRET}` (trước đây auth dùng default khác các service khác → mismatch tiềm ẩn khi chạy không env, giờ hết).
+- **2 chỗ `@Value` trong auth-service**: `UserServiceImpl` + `AuthController` `@Value("${app.internal-secret:dev-internal-secret}")` → `@Value("${app.internal-secret}")`.
+- `.env.example`: ghi rõ 3 biến này **BẮT BUỘC** (không default), JWT_SECRET ≥ 32 byte, GATEWAY/INTERNAL phải giống nhau ở mọi service.
+
+Grep xác nhận: không còn chuỗi `a3f8c9e1` / `8b7c6d5e` / `VmVyeVNlY3JldEtle` / `dev-internal-secret` nào trong repo.
+
+## 18. Kiểm chứng
+
+- `mvn test` auth-service (có sửa Java) → BUILD SUCCESS.
+- 6 test `@SpringBootTest contextLoads` đều `@Disabled` → CI (`./mvnw verify`) không khởi động context → bỏ default không làm CI đỏ.
+- `docker compose up -d --build` (rebuild toàn bộ image) → **9/9 container healthy** (các service lấy secret từ `.env` qua compose — fail-fast đúng: có env thì boot bình thường).
+- `npx newman run` collection Postman trên stack mới, `runId=990022` → **22 request, 31/31 assertion PASS** (booking PAID, 2 vé QR, check-in, cancel+refund FAILED đúng như test transId).
+- Sau verify: `docker compose down`.
+
+## 19. File sửa phiên 4
+
+- `api-gateway/src/main/resources/application.yaml`
+- `auth-service/src/main/resources/application.yaml` + `service/UserServiceImpl.java` + `controller/AuthController.java`
+- `booking-service/src/main/resources/application.yml`
+- `catalog-service/src/main/resources/application.yaml`
+- `notification-service/src/main/resources/application.yaml`
+- `payment-service/src/main/resources/application.yaml`
+- `.env.example` (ghi chú 3 biến bắt buộc), `DEPLOYMENT_ROADMAP.md`, `SESSION_SUMMARY_2026-09-04.md`.
+
+## 20. Trạng thái: Giai đoạn A XONG
+
+Toàn bộ checklist Giai đoạn A (roadmap) đã tick. Việc TIẾP THEO: **Giai đoạn B — Deploy** — cần user chốt host (Oracle Cloud Always Free ARM cần thẻ xác minh, hoặc PC + Cloudflare Tunnel).
