@@ -4,7 +4,7 @@ A production-style backend for an online cinema ticketing system, built as **6 i
 
 > **Status:** Core booking flow complete (Phase 1: 39/40). Currently hardening for deployment — see [Roadmap](#roadmap).
 
-<!-- badges added once CI is live -->
+[![CI](https://github.com/QuyenNDD/movie_ticket_microservice/actions/workflows/ci.yml/badge.svg)](https://github.com/QuyenNDD/movie_ticket_microservice/actions/workflows/ci.yml)
 
 ---
 
