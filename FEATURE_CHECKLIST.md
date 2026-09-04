@@ -193,14 +193,20 @@
   - → Đồng thời: đánh `@Disabled` toàn bộ 6 test `@SpringBootTest contextLoads` mặc định (cần hạ tầng thật) →
     `mvn test` cả 6 service giờ đều BUILD SUCCESS.
 - [x] Unit test cho logic nghiệp vụ (đặc biệt `BookingServiceImpl`, `MomoServiceImpl`)
-  - → `BookingServiceImplTest` (21 test, Mockito): `confirmPayment` (not found / sai chủ / idempotent khi đã PAID /
+  - → `BookingServiceImplTest` (32 test, Mockito): `confirmPayment` (not found / sai chủ / idempotent khi đã PAID /
     booking CANCELLED / hết hạn giữ chỗ / happy path sinh vé QR), `cancelBooking` (PENDING không hoàn tiền /
     PAID + suất chiếu đã bắt đầu / auto-refund SUCCESS→COMPLETED / bị từ chối→FAILED / mất kết nối→giữ PENDING),
-    `getMyBookings` (tính `expiresInSeconds`), `getTickets` + `checkInTicket` (các nhánh bảo mật/trạng thái).
-  - → `MomoServiceImplTest` (14 test): `refundPayment` (not found / chưa SUCCESS / idempotent / transId test không
+    `getMyBookings` (tính `expiresInSeconds`), `getTickets` + `checkInTicket` (các nhánh bảo mật/trạng thái),
+    `holdSeats` + `validateSeatSelectionRules` (thiếu suất chiếu / ghế trùng / ghế đã PAID / ghế không thuộc phòng /
+    ghế bị người khác giữ / ghế bảo trì / rule COUPLE vượt 8 chỗ / để lại ghế trống lẻ cô lập / mất lock Redis nhả
+    lock đã giữ / happy path lưu booking PENDING).
+  - → `MomoServiceImplTest` (25 test): `refundPayment` (not found / chưa SUCCESS / idempotent / transId test không
     hợp lệ→FAILED / MoMo chấp nhận→SUCCESS + lưu momoRefundTransId / MoMo từ chối→FAILED / lỗi mạng→FAILED),
     `handleBookingConfirmResult` (payment null / đã SUCCESS / confirm fail giữ trạng thái / confirm ok set paidAt),
-    `confirmBookingAndMarkSuccess` (dưới giới hạn retry→publish / chạm giới hạn→PAYMENT_REVIEW / publish lỗi→lastError).
+    `confirmBookingAndMarkSuccess` (dưới giới hạn retry→publish / chạm giới hạn→PAYMENT_REVIEW / publish lỗi→lastError),
+    `processIpn` (chữ ký sai→chặn / payment not found / idempotent khi đã SUCCESS / transId đã xử lý / resultCode lỗi→FAILED /
+    resultCode 1005→EXPIRED / orderId lệch bookingId→PAYMENT_REVIEW / lệch số tiền→PAYMENT_REVIEW / booking đã PAID→SUCCESS /
+    booking CANCELLED→REFUND_REQUIRED / booking PENDING→CONFIRM_PENDING + publish confirm).
   - → 2 test `@SpringBootTest contextLoads` mặc định (booking + payment) đánh `@Disabled` vì cần MySQL/Redis/RabbitMQ thật.
 - [ ] Integration test luồng đặt vé end-to-end
 - [ ] CI/CD pipeline tự động (build, test, deploy)

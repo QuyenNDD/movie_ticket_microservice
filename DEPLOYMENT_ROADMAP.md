@@ -99,15 +99,28 @@ KHÔNG làm: hạng thành viên, referral, đặt vé nhóm, xuất Excel, giá
 
 ## 4. Trạng thái hiện tại
 
-**Cập nhật:** 2026-09-03 (cuối phiên).
+**Cập nhật:** 2026-09-04 (cuối phiên).
 
 - Đang ở: **cuối Giai đoạn A**. Đã container hóa xong, cả stack chạy bằng `docker compose up -d --build` (9/9 container healthy, E2E qua gateway OK).
+- **Nợ kỹ thuật "còn treo" từ các phiên trước đã dọn sạch** (phiên 2026-09-04): gộp 2 filter catalog chồng nhau, externalize CORS origin gateway, unit test `holdSeats` + `processIpn` (booking 32 test / payment 25 test).
 - **Việc TIẾP THEO ngay:** GitHub Actions CI (build + `mvn test` 6 service) → rồi Postman collection → rồi dọn secret default → chuyển sang Giai đoạn B (chốt host + deploy).
 - Chưa chốt host. Cần bạn quyết: có thẻ để xác minh Oracle Cloud không? Nếu có → Oracle. Nếu không → PC + Cloudflare Tunnel.
 
 ---
 
 ## 5. Nhật ký theo phiên
+
+### Phiên 2026-09-04
+
+Chi tiết đầy đủ ở `SESSION_SUMMARY_2026-09-04.md`. Tóm tắt: **dọn sạch nợ kỹ thuật "còn treo"** liệt kê ở cuối phiên trước.
+
+- Rà soát code từng mục nợ. `.env.example` URL inconsistency → thực ra đã fix ở phiên 2026-09-03 (xoá memory tương ứng).
+- **Gộp filter catalog**: xoá `InternalApiFilter` (bị `ServiceAccessFilter` bao trùm hoàn toàn).
+- **Externalize CORS origin gateway**: `@Value("${app.cors.allowed-origins}")` ← env `CORS_ALLOWED_ORIGINS` (compose + `.env.example` cập nhật kèm).
+- **Unit test bổ sung**: `holdSeats` + `validateSeatSelectionRules` (11 test: rule COUPLE, ghế cô lập, lock Redis, ghế bảo trì/không thuộc phòng...) → `BookingServiceImplTest` 32 test. `processIpn` MoMo (11 test: chữ ký, idempotent IPN lặp, PAYMENT_REVIEW/REFUND_REQUIRED, các nhánh máy trạng thái) → `MomoServiceImplTest` 25 test.
+- `mvn test` cả 4 service liên quan BUILD SUCCESS. **Chưa commit** (chờ user xác nhận).
+
+**Còn dang dở (không đổi so với phiên trước):** CI GitHub Actions · Postman collection · dọn secret default hardcode · chốt host + deploy (Giai đoạn B).
 
 ### Phiên 2026-09-03
 
@@ -137,7 +150,7 @@ Chi tiết đầy đủ ở `SESSION_SUMMARY_2026-09-03.md`. Tóm tắt:
 - Dọn secret default hardcode trong yaml
 - Chốt host + deploy (Giai đoạn B)
 
-**Ghi chú kỹ thuật phát hiện trong phiên (chưa xử lý):**
-- catalog-service có 2 filter chồng nhau (`ServiceAccessFilter` + `InternalApiFilter`) — nên gộp.
+**Ghi chú kỹ thuật phát hiện trong phiên:**
+- ~~catalog-service có 2 filter chồng nhau (`ServiceAccessFilter` + `InternalApiFilter`) — nên gộp.~~ → đã gộp (phiên 2026-09-04).
 - Khi gửi email với credential Gmail giả, notification-service treo → caller timeout (đã bắt lỗi, không chặn đăng ký). Deploy thật cần Gmail App Password thật.
 - `eclipse-temurin:21-jre-alpine` + `wget` (busybox) dùng cho healthcheck trong compose — OK.
